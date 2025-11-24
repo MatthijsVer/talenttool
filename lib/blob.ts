@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 const BLOB_API_URL = process.env.BLOB_API_URL ?? "https://blob.vercel-storage.com";
 const BLOB_RW_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
@@ -11,7 +13,7 @@ export interface BlobUploadResult {
 
 export async function uploadToBlob(
   key: string,
-  data: ArrayBuffer | Buffer,
+  data: ArrayBuffer | Uint8Array | Buffer,
   contentType?: string,
 ): Promise<BlobUploadResult> {
   if (!BLOB_RW_TOKEN) {
@@ -25,7 +27,7 @@ export async function uploadToBlob(
       "x-vercel-filename": key,
       ...(contentType ? { "Content-Type": contentType } : {}),
     },
-    body: data,
+    body: toArrayBuffer(data),
   });
 
   if (!response.ok) {
@@ -34,4 +36,12 @@ export async function uploadToBlob(
   }
 
   return (await response.json()) as BlobUploadResult;
+}
+
+function toArrayBuffer(input: ArrayBuffer | Uint8Array | Buffer) {
+  if (input instanceof ArrayBuffer) {
+    return input;
+  }
+  const view = input instanceof Buffer ? input : Buffer.from(input);
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
 }
