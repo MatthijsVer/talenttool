@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { put } from "@vercel/blob";
 
 const BLOB_RW_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
@@ -19,7 +21,7 @@ export async function uploadToBlob(
     throw new Error("Missing BLOB_READ_WRITE_TOKEN environment variable.");
   }
 
-  const blob = await put(key, data, {
+  const blob = await put(key, ensureBuffer(data), {
     access: "private",
     contentType: contentType ?? "application/octet-stream",
     token: BLOB_RW_TOKEN,
@@ -32,4 +34,17 @@ export async function uploadToBlob(
     uploadedAt: blob.uploadedAt,
     contentType: blob.contentType,
   };
+}
+
+function ensureBuffer(input: ArrayBuffer | Uint8Array | Blob | Buffer) {
+  if (input instanceof Buffer) {
+    return input;
+  }
+  if (typeof Blob !== "undefined" && input instanceof Blob) {
+    return Buffer.from(await input.arrayBuffer());
+  }
+  if (input instanceof ArrayBuffer) {
+    return Buffer.from(input);
+  }
+  return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
 }
