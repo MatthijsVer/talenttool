@@ -50,12 +50,12 @@ export async function runAgentCompletion(
     .filter((content) => content.trim().length > 0)
     .join("\n\n");
 
-  const conversation = [
+  const conversation: OpenAI.Responses.ResponseInput = [
     ...(systemContent.length
       ? [
           {
             role: "system" as const,
-            content: [{ type: "input_text" as const, text: systemContent }],
+            content: systemContent,
           },
         ]
       : []),
@@ -63,14 +63,9 @@ export async function runAgentCompletion(
       .filter((message) => message.role !== "system")
       .map((message) => ({
         role: message.role,
-        content: [{ type: "input_text" as const, text: message.content }],
+        content: message.content,
       })),
-  ].filter(
-    (entry) =>
-      entry.content?.[0]?.text &&
-      typeof entry.content[0].text === "string" &&
-      entry.content[0].text.trim().length > 0,
-  ) as OpenAI.Responses.ResponseInput;
+  ].filter((entry) => typeof entry.content === "string" && entry.content.trim().length > 0);
 
   const response = await client.responses.create({
     model: options.model,

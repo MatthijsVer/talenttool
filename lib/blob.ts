@@ -24,6 +24,8 @@ export async function uploadToBlob(
     method: "POST",
     headers: {
       Authorization: `Bearer ${BLOB_RW_TOKEN}`,
+      "x-vercel-blobs-version": "1",
+      "x-vercel-blobs-operation": "upload",
       "x-vercel-filename": key,
       ...(contentType ? { "Content-Type": contentType } : {}),
     },
