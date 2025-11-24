@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import OpenAI from "openai";
 
 type ChatRole = "user" | "assistant" | "system";
@@ -42,24 +44,38 @@ export async function runAgentCompletion(
 ): Promise<AgentRunResult> {
   const client = getOpenAIClient();
 
+  const systemContent = options.messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .filter((content) => content.trim().length > 0)
+    .join("\n\n");
+
+  const conversation = [
+    ...(systemContent.length
+      ? [
+          {
+            role: "system" as const,
+            content: [{ type: "input_text" as const, text: systemContent }],
+          },
+        ]
+      : []),
+    ...options.messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        role: message.role,
+        content: [{ type: "input_text" as const, text: message.content }],
+      })),
+  ].filter(
+    (entry) =>
+      entry.content?.[0]?.text &&
+      typeof entry.content[0].text === "string" &&
+      entry.content[0].text.trim().length > 0,
+  ) as OpenAI.Responses.ResponseInput;
+
   const response = await client.responses.create({
     model: options.model,
     temperature: options.temperature ?? 0.4,
-    input: [
-      {
-        role: "system",
-        content: options.messages
-          .filter((message) => message.role === "system")
-          .map((message) => message.content)
-          .join("\n\n"),
-      },
-      ...options.messages
-        .filter((message) => message.role !== "system")
-        .map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-    ].filter((entry) => typeof entry.content === "string" && entry.content.trim().length > 0),
+    input: conversation,
   });
 
   const outputText = extractText(response);
@@ -75,8 +91,25 @@ export async function runAgentCompletion(
   };
 }
 
+export async function transcribeAudio(
+  filePath: string,
+  mimeType?: string,
+): Promise<{ text: string; duration?: number }> {
+  const client = getOpenAIClient();
+  const response = await client.audio.transcriptions.create({
+    file: fs.createReadStream(filePath),
+    model: process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe",
+    response_format: "verbose_json",
+  });
+
+  return {
+    text: response.text ?? "",
+    duration: typeof response.duration === "number" ? response.duration : undefined,
+  };
+}
+
 function extractText(response: OpenAI.Responses.Response) {
-  const outputText = response.output_text;
+  const outputText = response.output_text as string | string[] | undefined;
   if (typeof outputText === "string") {
     return outputText.trim();
   }
@@ -90,30 +123,37 @@ function extractText(response: OpenAI.Responses.Response) {
 
   return (
     response.output
-      .map((item) =>
-        item.content
-          ?.map((contentItem) => getContentText(contentItem))
-          .filter(Boolean)
-          .join(" "),
-      )
+      .map((item) => {
+        if (!("content" in item)) {
+          return "";
+        }
+        return (
+          item.content
+            ?.map((contentItem) => getContentText(contentItem))
+            .filter(Boolean)
+            .join(" ") ?? ""
+        );
+      })
       .filter(Boolean)
       .join("\n")
       .trim() ?? ""
   );
 }
 
-function getContentText(contentItem: OpenAI.Responses.ResponseOutputItem["content"][number]) {
+function getContentText(contentItem: unknown) {
   if (!contentItem) {
     return "";
   }
-  switch (contentItem.type) {
+  const item = contentItem as { type?: string; text?: unknown };
+  switch (item.type) {
     case "output_text":
     case "input_text":
-      return contentItem.text ?? "";
+      return typeof item.text === "string" ? item.text : "";
     case "text":
-      return typeof contentItem.text === "string"
-        ? contentItem.text
-        : contentItem.text?.value ?? "";
+      if (typeof item.text === "string") {
+        return item.text;
+      }
+      return (item.text as { value?: string })?.value ?? "";
     default:
       return "";
   }

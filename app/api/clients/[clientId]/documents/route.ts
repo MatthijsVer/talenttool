@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { transcribeAudio } from "@/lib/ai/openai";
 import {
   createClientDocument,
   getClient,
@@ -55,9 +56,21 @@ export async function POST(request: Request, { params }: Params) {
   const buffer = Buffer.from(arrayBuffer);
   await writeFile(filePath, buffer);
 
-  const content = shouldStoreContent(file.type, file.name)
-    ? buffer.toString("utf-8").slice(0, 8000)
-    : undefined;
+  const isAudio = isAudioFile(file.name, file.type);
+  let content: string | undefined;
+  let audioDuration: number | undefined;
+
+  if (isAudio) {
+    try {
+      const transcription = await transcribeAudio(filePath, file.type);
+      content = transcription.text?.trim() || undefined;
+      audioDuration = transcription.duration;
+    } catch (error) {
+      console.error("Audio transcription failed", error);
+    }
+  } else if (shouldStoreContent(file.type, file.name)) {
+    content = buffer.toString("utf-8").slice(0, 8000);
+  }
 
   await createClientDocument({
     clientId,
@@ -66,6 +79,8 @@ export async function POST(request: Request, { params }: Params) {
     mimeType: file.type || "application/octet-stream",
     size: file.size,
     content,
+    kind: isAudio ? "AUDIO" : "TEXT",
+    audioDuration,
   });
 
   const documents = await getClientDocuments(clientId);
@@ -77,4 +92,11 @@ function shouldStoreContent(mimeType: string, fileName: string) {
     return true;
   }
   return /\.(md|txt|json|csv)$/i.test(fileName);
+}
+
+function isAudioFile(fileName: string, mimeType?: string) {
+  if (mimeType?.startsWith("audio/")) {
+    return true;
+  }
+  return /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
 }

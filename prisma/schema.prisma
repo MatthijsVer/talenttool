@@ -24,6 +24,7 @@ model Client {
   sessions  CoachingSession[]
   goals     ClientGoal[]
   documents ClientDocument[]
+  directives CoachDirective[]
 }
 
 model ClientGoal {
@@ -70,19 +71,42 @@ model OverseerMessage {
 }
 
 model ClientDocument {
-  id           String   @id @default(cuid())
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  clientId     String
-  originalName String
-  storedName   String
-  mimeType     String
-  size         Int
-  content      String?  @db.LongText
-  createdAt    DateTime @default(now())
+  id             String       @id @default(cuid())
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId       String
+  originalName   String
+  storedName     String
+  mimeType       String
+  size           Int
+  kind           DocumentKind @default(TEXT)
+  content        String?      @db.LongText
+  audioDuration  Float?
+  createdAt      DateTime     @default(now())
 
   @@index([clientId])
 }
 enum MessageSource {
   AI
   HUMAN
+}
+
+enum DocumentKind {
+  TEXT
+  AUDIO
+}
+
+model CoachDirective {
+  id         String   @id @default(cuid())
+  client     Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId   String?
+  summary    String   @db.Text
+  createdAt  DateTime @default(now())
+  createdBy  MessageSource @default(AI)
+}
+
+model SystemPrompt {
+  id        String   @id
+  content   String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

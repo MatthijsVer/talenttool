@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 export type AgentRole = "user" | "assistant" | "system" | "overseer";
@@ -25,9 +27,16 @@ export interface ClientDocument {
   storedName: string;
   mimeType: string;
   size: number;
+  kind: DocumentKind;
   createdAt: string;
+  audioDuration?: number | null;
   content?: string | null;
 }
+
+export type DocumentKind = "TEXT" | "AUDIO";
+
+const COACH_PROMPT_ID = "coach-role";
+const OVERSEER_PROMPT_ID = "overseer-role";
 
 async function ensureSession(clientId: string) {
   const client = await prisma.client.findUnique({
@@ -99,7 +108,7 @@ export async function appendClientMessage(
   clientId: string,
   role: AgentRole,
   content: string,
-  meta?: Record<string, unknown>,
+  meta?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput,
   source: MessageSource = "AI",
 ): Promise<AgentMessage> {
   const session = await ensureSession(clientId);
@@ -142,7 +151,7 @@ export async function recordOverseerMessage(
   role: AgentRole,
   source: MessageSource,
   content: string,
-  meta?: Record<string, unknown>,
+  meta?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput,
 ): Promise<AgentMessage> {
   const message = await prisma.overseerMessage.create({
     data: {
@@ -213,7 +222,7 @@ function mapAgentMessage(message: {
   source?: MessageSource | null;
   content: string;
   createdAt: Date;
-  meta: unknown | null;
+  meta: Prisma.JsonValue | null;
 }): AgentMessage {
   return {
     id: message.id,
@@ -231,7 +240,7 @@ function mapOverseerMessage(message: {
   source?: MessageSource | null;
   content: string;
   createdAt: Date;
-  meta: unknown | null;
+  meta: Prisma.JsonValue | null;
 }): AgentMessage {
   return {
     id: message.id,
@@ -263,6 +272,8 @@ export async function createClientDocument(input: {
   mimeType: string;
   size: number;
   content?: string;
+  kind?: DocumentKind;
+  audioDuration?: number;
 }): Promise<ClientDocument> {
   const document = await prisma.clientDocument.create({
     data: {
@@ -272,6 +283,8 @@ export async function createClientDocument(input: {
       mimeType: input.mimeType,
       size: input.size,
       content: input.content,
+      kind: input.kind ?? "TEXT",
+      audioDuration: input.audioDuration,
     },
   });
 
@@ -290,10 +303,61 @@ export async function getDocumentSnippets(
 
   return documents.map(
     (doc) =>
-      `Document: ${doc.originalName}\nGeüpload op: ${doc.createdAt.toISOString()}\nInhoud:\n${
-        doc.content?.slice(0, 1200) ?? "Geen inhoud beschikbaar."
-      }`,
+      `Document (${doc.kind}): ${doc.originalName}\nGeüpload op: ${doc.createdAt.toISOString()}${
+        doc.kind === "AUDIO" && doc.audioDuration
+          ? `\nLengte audio: ${doc.audioDuration?.toFixed(1)}s`
+          : ""
+      }\nInhoud:\n${doc.content?.slice(0, 1200) ?? "Geen transcript beschikbaar."}`,
   );
+}
+
+export interface SystemPromptRecord {
+  content: string;
+  updatedAt: string;
+}
+
+async function getPromptRecord(id: string): Promise<SystemPromptRecord | null> {
+  const prompt = await prisma.systemPrompt.findUnique({
+    where: { id },
+  });
+
+  if (!prompt) {
+    return null;
+  }
+
+  return {
+    content: prompt.content,
+    updatedAt: prompt.updatedAt.toISOString(),
+  };
+}
+
+async function upsertPromptRecord(id: string, content: string): Promise<SystemPromptRecord> {
+  const prompt = await prisma.systemPrompt.upsert({
+    where: { id },
+    update: { content },
+    create: { id, content },
+  });
+
+  return {
+    content: prompt.content,
+    updatedAt: prompt.updatedAt.toISOString(),
+  };
+}
+
+export async function getCoachPrompt(): Promise<SystemPromptRecord | null> {
+  return getPromptRecord(COACH_PROMPT_ID);
+}
+
+export async function updateCoachPrompt(content: string): Promise<SystemPromptRecord> {
+  return upsertPromptRecord(COACH_PROMPT_ID, content);
+}
+
+export async function getOverseerPrompt(): Promise<SystemPromptRecord | null> {
+  return getPromptRecord(OVERSEER_PROMPT_ID);
+}
+
+export async function updateOverseerPrompt(content: string): Promise<SystemPromptRecord> {
+  return upsertPromptRecord(OVERSEER_PROMPT_ID, content);
 }
 
 function mapDocument(document: {
@@ -303,6 +367,8 @@ function mapDocument(document: {
   mimeType: string;
   size: number;
   createdAt: Date;
+  kind: DocumentKind;
+  audioDuration: number | null;
   content: string | null;
 }): ClientDocument {
   return {
@@ -311,6 +377,8 @@ function mapDocument(document: {
     storedName: document.storedName,
     mimeType: document.mimeType,
     size: document.size,
+    kind: document.kind,
+    audioDuration: document.audioDuration,
     createdAt: document.createdAt.toISOString(),
     content: document.content,
   };
