@@ -100,6 +100,8 @@ export function CoachDashboard({ clients }: CoachDashboardProps) {
     }
   }
 
+  const test = console.log("test");
+
   async function fetchClientDocuments(clientId: string) {
     try {
       const response = await fetch(`/api/clients/${clientId}/documents`);
