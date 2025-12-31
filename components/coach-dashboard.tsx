@@ -88,9 +88,11 @@ const toolLinks: Array<{ label: string; icon: LucideIcon }> = [
 
 export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const router = useRouter();
+  const [clientList, setClientList] = useState<ClientProfile[]>(clients);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     clients[0]?.id ?? null
   );
+  const [displayUser, setDisplayUser] = useState(currentUser);
   const [clientHistories, setClientHistories] = useState<HistoryState>({});
   const [clientDocuments, setClientDocuments] = useState<DocumentState>({});
   const [overseerThread, setOverseerThread] = useState<AgentMessage[]>([]);
@@ -167,8 +169,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const editClientAvatarInputId = useId();
   const newClientAvatarInputId = useId();
   const userAvatarInputId = useId();
-  const isAdmin = currentUser.role === "ADMIN";
-  const userInitial = currentUser.name?.charAt(0).toUpperCase() ?? "C";
+  const isAdmin = displayUser.role === "ADMIN";
+  const userInitial = displayUser.name?.charAt(0).toUpperCase() ?? "C";
   const settingsSections = useMemo<
     Array<{
       id: SettingsTab;
@@ -191,9 +193,17 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     settingsSections.find((section) => section.id === activeSettingsTab) ??
     settingsSections[0];
 
+  useEffect(() => {
+    setClientList(clients);
+  }, [clients]);
+
+  useEffect(() => {
+    setDisplayUser(currentUser);
+  }, [currentUser]);
+
   const selectedClient = useMemo(
-    () => clients.find((client) => client.id === selectedClientId),
-    [clients, selectedClientId]
+    () => clientList.find((client) => client.id === selectedClientId),
+    [clientList, selectedClientId]
   );
   const selectedClientInitials = getInitials(selectedClient?.name);
   const newClientInitials = getInitials(newClientForm.name);
@@ -225,11 +235,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
   useEffect(() => {
     setUserForm({
-      name: currentUser.name,
-      image: currentUser.image ?? "",
+      name: displayUser.name,
+      image: displayUser.image ?? "",
     });
     setUserAvatarFile(null);
-  }, [currentUser]);
+  }, [displayUser]);
 
   async function fetchClientHistory(clientId: string) {
     try {
@@ -661,6 +671,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         throw new Error(data.error ?? "Bijwerken van cliënt is mislukt.");
       }
 
+      let latestClient: ClientProfile | undefined = data.client;
+
       if (avatarFile) {
         const avatarForm = new FormData();
         avatarForm.append("file", avatarFile);
@@ -672,7 +684,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         if (!uploadResponse.ok || !uploadData.url) {
           throw new Error(uploadData.error ?? "Avatar uploaden is mislukt.");
         }
-        await fetch(`/api/clients/${clientId}`, {
+        const avatarPatch = await fetch(`/api/clients/${clientId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -680,6 +692,22 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
             avatarUrl: uploadData.url,
           }),
         });
+        const avatarResult = await avatarPatch.json();
+        if (!avatarPatch.ok) {
+          throw new Error(
+            avatarResult.error ?? "Bijwerken van cliëntavatar is mislukt."
+          );
+        }
+        latestClient = avatarResult.client ?? latestClient;
+      }
+
+      if (latestClient) {
+        const updatedClient = latestClient;
+        setClientList((prev) =>
+          prev.map((client) =>
+            client.id === updatedClient.id ? updatedClient : client
+          )
+        );
       }
 
       router.refresh();
@@ -744,6 +772,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
       router.refresh();
       if (data.client?.id) {
+        setClientList((prev) => [...prev, data.client]);
         setSelectedClientId(data.client.id);
       }
       setCreateClientDialogOpen(false);
@@ -799,8 +828,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         throw new Error(data.error ?? "Profiel bijwerken is mislukt.");
       }
 
-      router.refresh();
+      setDisplayUser((prev) => ({
+        ...prev,
+        name: userForm.name,
+        image: imageUrl,
+      }));
       setUserAvatarFile(null);
+      router.refresh();
     } catch (userError) {
       console.error(userError);
       setError((userError as Error).message ?? "Profiel bijwerken is mislukt.");
@@ -980,15 +1014,15 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
           {/* Header */}
           <div className="">
             <div className="flex items-center gap-3 px-4 pt-4 pb-2">
-              <div className="size-9 shrink-0 rounded-xl bg-slate-900 text-white overflow-hidden ring-1 ring-slate-900/10">
-                {currentUser.image ? (
-                  <Image
-                    src={currentUser.image}
-                    alt={currentUser.name}
-                    width={36}
-                    height={36}
-                    className="size-9 object-cover"
-                    unoptimized
+            <div className="size-9 shrink-0 rounded-xl bg-slate-900 text-white overflow-hidden ring-1 ring-slate-900/10">
+              {displayUser.image ? (
+                <Image
+                  src={displayUser.image}
+                  alt={displayUser.name}
+                  width={36}
+                  height={36}
+                  className="size-9 object-cover"
+                  unoptimized
                   />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-sm font-semibold">
@@ -997,14 +1031,14 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                 )}
               </div>
 
-              <div className="min-w-0 leading-tight">
-                <p className="truncate text-sm font-semibold text-slate-900">
-                  {currentUser.name}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {isAdmin ? "Administrator" : "Coach"}
-                </p>
-              </div>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {displayUser.name}
+              </p>
+              <p className="text-xs text-slate-500">
+                {isAdmin ? "Administrator" : "Coach"}
+              </p>
+            </div>
             </div>
           </div>
 
@@ -1182,7 +1216,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
               </div>
 
               <ul className="space-y-1">
-                {clients.map((client) => {
+              {clientList.map((client) => {
                   const isActive = client.id === selectedClientId;
 
                   return (
@@ -1200,7 +1234,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                             : "text-slate-700",
                         ].join(" ")}
                       >
-                        <div className="size-8 rounded-lg overflow-hidden bg-white ring-1 ring-slate-200/70 flex items-center justify-center">
+                      <div className="size-8 rounded-full overflow-hidden bg-white ring-1 ring-slate-200/70 flex items-center justify-center">
                           {client.avatarUrl ? (
                             <Image
                               src={client.avatarUrl}
@@ -1332,21 +1366,21 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                                 className="size-16 object-cover"
                                               />
                                             </>
-                                          ) : currentUser.image ? (
-                                            <Image
-                                              src={currentUser.image}
-                                              alt={currentUser.name}
-                                              width={64}
-                                              height={64}
-                                              className="size-16 object-cover"
-                                              unoptimized
-                                            />
-                                          ) : currentUser.name ? (
-                                            <span className="text-base font-semibold">
-                                              {getInitials(currentUser.name)}
-                                            </span>
-                                          ) : (
-                                            <UserRound className="size-6 text-slate-400" />
+                                        ) : displayUser.image ? (
+                                          <Image
+                                            src={displayUser.image}
+                                            alt={displayUser.name}
+                                            width={64}
+                                            height={64}
+                                            className="size-16 object-cover"
+                                            unoptimized
+                                          />
+                                        ) : displayUser.name ? (
+                                          <span className="text-base font-semibold">
+                                            {getInitials(displayUser.name)}
+                                          </span>
+                                        ) : (
+                                          <UserRound className="size-6 text-slate-400" />
                                           )}
                                         </div>
                                         <div>
@@ -1373,12 +1407,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                               Kies bestand
                                             </label>
                                             <span className="text-xs text-slate-500">
-                                              {userAvatarFile
-                                                ? userAvatarFile.name
-                                                : currentUser.image
-                                                ? "Huidige foto ingesteld"
-                                                : "Geen bestand geselecteerd"}
-                                            </span>
+                                            {userAvatarFile
+                                              ? userAvatarFile.name
+                                              : displayUser.image
+                                              ? "Huidige foto ingesteld"
+                                              : "Geen bestand geselecteerd"}
+                                          </span>
                                           </div>
                                           <p className="mt-1 text-[11px] text-slate-500">
                                             PNG of JPG, maximaal 5 MB.
@@ -1401,7 +1435,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                         />
                                       </label>
                                       <p className="text-xs text-slate-500">
-                                        Ingelogd als {currentUser.email}
+                                      Ingelogd als {displayUser.email}
                                       </p>
                                       <button
                                         type="submit"
