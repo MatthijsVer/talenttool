@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
@@ -15,6 +22,7 @@ import {
   Lightbulb,
   UserRound,
   Plus,
+  Sparkles,
 } from "lucide-react";
 import type { UserRole } from "@prisma/client";
 
@@ -51,6 +59,20 @@ type ModelOption = {
   value: string;
   label: string;
 };
+type AgentKindType = "COACH" | "OVERSEER";
+
+interface AgentFeedbackItem {
+  id: string;
+  agentType: AgentKindType;
+  messageId: string;
+  messageContent: string;
+  feedback: string;
+  createdAt: string;
+  createdBy?: {
+    id: string;
+    name?: string | null;
+  } | null;
+}
 
 function getInitials(name?: string | null) {
   if (!name) return "";
@@ -123,6 +145,21 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   >(null);
   const [isOverseerPromptLoading, setOverseerPromptLoading] = useState(true);
   const [isOverseerPromptSaving, setOverseerPromptSaving] = useState(false);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackTarget, setFeedbackTarget] = useState<{
+    agentType: AgentKindType;
+    messageId: string;
+    messageContent: string;
+  } | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [isFeedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [recentFeedback, setRecentFeedback] = useState<AgentFeedbackItem[]>([]);
+  const [isFeedbackLoading, setFeedbackLoading] = useState(false);
+  const [refineTarget, setRefineTarget] = useState<AgentKindType | null>(null);
+  const [isRefiningPrompt, setRefiningPrompt] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<
+    "dashboard" | "prompt-center"
+  >("dashboard");
   const [error, setError] = useState<string | null>(null);
   const [isSigningOut, setSigningOut] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] =
@@ -147,19 +184,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         title: "Mijn profiel",
         description: "Beheer je accountgegevens en profielfoto.",
       },
-      ...(isAdmin
-        ? [
-            {
-              id: "prompts" as const,
-              label: "Prompts",
-              title: "AI Prompts",
-              description:
-                "Configureer coach- en overzichtsprompts voor het systeem.",
-            },
-          ]
-        : []),
     ],
-    [isAdmin]
+    []
   );
   const activeSettings =
     settingsSections.find((section) => section.id === activeSettingsTab) ??
@@ -204,12 +230,6 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     });
     setUserAvatarFile(null);
   }, [currentUser]);
-
-  useEffect(() => {
-    if (!isAdmin && activeSettingsTab === "prompts") {
-      setActiveSettingsTab("profile");
-    }
-  }, [isAdmin, activeSettingsTab]);
 
   async function fetchClientHistory(clientId: string) {
     try {
@@ -305,29 +325,50 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       }
 
       const normalizedOptions: ModelOption[] = Array.isArray(
-        data.availableModels,
+        data.availableModels
       )
         ? (data.availableModels as ModelOption[]).filter(
             (option) =>
               typeof option?.value === "string" &&
-              typeof option?.label === "string",
+              typeof option?.label === "string"
           )
         : [];
 
       setAvailableModels(normalizedOptions);
-      setCoachModel(
-        typeof data.coachModel === "string" ? data.coachModel : "",
-      );
+      setCoachModel(typeof data.coachModel === "string" ? data.coachModel : "");
       setOverseerModel(
-        typeof data.overseerModel === "string" ? data.overseerModel : "",
+        typeof data.overseerModel === "string" ? data.overseerModel : ""
       );
     } catch (fetchError) {
       console.error(fetchError);
       setError(
-        (fetchError as Error).message ?? "AI-modellen laden is mislukt.",
+        (fetchError as Error).message ?? "AI-modellen laden is mislukt."
       );
     } finally {
       setModelLoading(false);
+    }
+  }, [isAdmin]);
+
+  const fetchFeedbackList = useCallback(async () => {
+    if (!isAdmin) {
+      setRecentFeedback([]);
+      setFeedbackLoading(false);
+      return;
+    }
+
+    setFeedbackLoading(true);
+    try {
+      const response = await fetch("/api/feedback?limit=20");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? "Feedback ophalen is mislukt.");
+      }
+      setRecentFeedback(Array.isArray(data.feedback) ? data.feedback : []);
+    } catch (fetchError) {
+      console.error(fetchError);
+      setError((fetchError as Error).message ?? "Feedback ophalen is mislukt.");
+    } finally {
+      setFeedbackLoading(false);
     }
   }, [isAdmin]);
 
@@ -337,6 +378,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     void fetchOverseerPrompt();
     void fetchModelSettings();
   }, [fetchModelSettings]);
+
+  useEffect(() => {
+    void fetchFeedbackList();
+  }, [fetchFeedbackList]);
 
   async function handleCoachSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -461,12 +506,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       }
 
       const normalizedOptions: ModelOption[] = Array.isArray(
-        data.availableModels,
+        data.availableModels
       )
         ? (data.availableModels as ModelOption[]).filter(
             (option) =>
               typeof option?.value === "string" &&
-              typeof option?.label === "string",
+              typeof option?.label === "string"
           )
         : availableModels;
 
@@ -475,17 +520,17 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       }
 
       setCoachModel(
-        typeof data.coachModel === "string" ? data.coachModel : coachModel,
+        typeof data.coachModel === "string" ? data.coachModel : coachModel
       );
       setOverseerModel(
         typeof data.overseerModel === "string"
           ? data.overseerModel
-          : overseerModel,
+          : overseerModel
       );
     } catch (saveError) {
       console.error(saveError);
       setError(
-        (saveError as Error).message ?? "AI-modellen opslaan is mislukt.",
+        (saveError as Error).message ?? "AI-modellen opslaan is mislukt."
       );
     } finally {
       setModelSaving(false);
@@ -764,6 +809,91 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
   }
 
+  function openFeedbackDialog(agentType: AgentKindType, message: AgentMessage) {
+    setFeedbackTarget({
+      agentType,
+      messageId: message.id,
+      messageContent: message.content,
+    });
+    setFeedbackText("");
+    setFeedbackDialogOpen(true);
+  }
+
+  function closeFeedbackDialog() {
+    setFeedbackDialogOpen(false);
+    setFeedbackTarget(null);
+    setFeedbackText("");
+  }
+
+  async function handleFeedbackSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!feedbackTarget || !feedbackText.trim()) {
+      setError("Feedback mag niet leeg zijn.");
+      return;
+    }
+
+    setFeedbackSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentType: feedbackTarget.agentType,
+          messageId: feedbackTarget.messageId,
+          feedback: feedbackText,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? "Feedback versturen is mislukt.");
+      }
+      closeFeedbackDialog();
+      setFeedbackText("");
+      await fetchFeedbackList();
+    } catch (feedbackError) {
+      console.error(feedbackError);
+      setError(
+        (feedbackError as Error).message ?? "Feedback versturen is mislukt."
+      );
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  }
+
+  async function handlePromptRegenerate(agentType: AgentKindType) {
+    setRefiningPrompt(true);
+    setRefineTarget(agentType);
+    setError(null);
+    try {
+      const response = await fetch("/api/prompts/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentType }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? "Prompt herschrijven is mislukt.");
+      }
+      if (agentType === "COACH") {
+        setCoachPrompt(data.prompt ?? coachPrompt);
+        setCoachPromptUpdatedAt(data.updatedAt ?? null);
+      } else {
+        setOverseerPrompt(data.prompt ?? overseerPrompt);
+        setOverseerPromptUpdatedAt(data.updatedAt ?? null);
+      }
+      await fetchFeedbackList();
+    } catch (refineError) {
+      console.error(refineError);
+      setError(
+        (refineError as Error).message ?? "Prompt herschrijven is mislukt."
+      );
+    } finally {
+      setRefiningPrompt(false);
+      setRefineTarget(null);
+    }
+  }
+
   const messages = useMemo(
     () => (selectedClientId ? clientHistories[selectedClientId] ?? [] : []),
     [clientHistories, selectedClientId]
@@ -800,6 +930,20 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     ];
   }, [selectedClient]);
 
+  const coachFeedbackItems = useMemo(
+    () =>
+      recentFeedback.filter((item) => item.agentType === "COACH").slice(0, 5),
+    [recentFeedback]
+  );
+
+  const overseerFeedbackItems = useMemo(
+    () =>
+      recentFeedback
+        .filter((item) => item.agentType === "OVERSEER")
+        .slice(0, 5),
+    [recentFeedback]
+  );
+
   const coachMessagesRef = useRef<HTMLDivElement | null>(null);
   const overseerMessagesRef = useRef<HTMLDivElement | null>(null);
 
@@ -825,1180 +969,1451 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   }, [overseerThread, activeChannel, scrollToBottom]);
 
   return (
-    // Used a very flat light grey background for the app container
-    <div className="flex h-screen max-h-screen w-full bg-slate-50 text-slate-900 overflow-hidden">
-      {/* Sidebar: Flat, bordered, minimal */}
-      <aside className="w-72 shrink-0 border-r border-slate-200/60 bg-white/80 backdrop-blur flex flex-col">
-        {/* Header */}
-        <div className="">
-          <div className="flex items-center gap-3 px-4 pt-4 pb-2">
-            <div className="size-9 shrink-0 rounded-xl bg-slate-900 text-white overflow-hidden ring-1 ring-slate-900/10">
-              {currentUser.image ? (
-                <Image
-                  src={currentUser.image}
-                  alt={currentUser.name}
-                  width={36}
-                  height={36}
-                  className="size-9 object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-sm font-semibold">
-                  {userInitial}
-                </span>
-              )}
-            </div>
-
-            <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {currentUser.name}
-              </p>
-              <p className="text-xs text-slate-500">
-                {isAdmin ? "Administrator" : "Coach"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-          {/* Clients */}
-          <div>
-            <div className="mb-2 flex items-center justify-between px-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Cliënten
-              </p>
-              {isAdmin && (
-                <Dialog
-                  open={isCreateClientDialogOpen}
-                  onOpenChange={(open) => {
-                    setCreateClientDialogOpen(open);
-                    if (!open) {
-                      setNewClientForm({
-                        name: "",
-                        focusArea: "",
-                        summary: "",
-                        goals: "",
-                      });
-                      setNewClientAvatarFile(null);
-                    }
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-100/70">
-                      <Plus className="size-3.5" />
-                      Nieuw
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-xl space-y-4">
-                    <DialogHeader>
-                      <DialogTitle>Nieuwe cliënt</DialogTitle>
-                      <DialogDescription>
-                        Voeg een nieuwe coachee toe aan het systeem.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form className="space-y-4" onSubmit={handleNewClientSubmit}>
-                      <div className="flex items-center gap-3">
-                        <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 overflow-hidden flex items-center justify-center">
-                          {newClientAvatarFile ? (
-                            <>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={URL.createObjectURL(newClientAvatarFile)}
-                                alt="Voorbeeld avatar"
-                                className="size-16 object-cover"
-                              />
-                            </>
-                          ) : newClientInitials ? (
-                            <span className="text-base font-semibold">
-                              {newClientInitials}
-                            </span>
-                          ) : (
-                            <UserRound className="size-6 text-slate-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-slate-700">
-                            Profielfoto
-                          </p>
-                          <div className="mt-1 flex items-center gap-2">
-                            <input
-                              id={newClientAvatarInputId}
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={(event) =>
-                                setNewClientAvatarFile(
-                                  event.target.files?.[0] ?? null
-                                )
-                              }
-                            />
-                            <label
-                              htmlFor={newClientAvatarInputId}
-                              className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Kies bestand
-                            </label>
-                            <span className="text-xs text-slate-500">
-                              {newClientAvatarFile
-                                ? newClientAvatarFile.name
-                                : "Geen bestand geselecteerd"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            PNG of JPG, maximaal 5 MB.
-                          </p>
-                        </div>
-                      </div>
-                      <label className="flex flex-col gap-1 text-sm">
-                        Naam
-                        <input
-                          type="text"
-                          value={newClientForm.name}
-                          onChange={(event) =>
-                            setNewClientForm((form) => ({
-                              ...form,
-                              name: event.target.value,
-                            }))
-                          }
-                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                          required
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-sm">
-                        Focusgebied
-                        <input
-                          type="text"
-                          value={newClientForm.focusArea}
-                          onChange={(event) =>
-                            setNewClientForm((form) => ({
-                              ...form,
-                              focusArea: event.target.value,
-                            }))
-                          }
-                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-sm">
-                        Samenvatting
-                        <textarea
-                          value={newClientForm.summary}
-                          onChange={(event) =>
-                            setNewClientForm((form) => ({
-                              ...form,
-                              summary: event.target.value,
-                            }))
-                          }
-                          rows={4}
-                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-sm">
-                        Doelen (gescheiden door komma)
-                        <textarea
-                          value={newClientForm.goals}
-                          onChange={(event) =>
-                            setNewClientForm((form) => ({
-                              ...form,
-                              goals: event.target.value,
-                            }))
-                          }
-                          rows={3}
-                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                          placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
-                        />
-                      </label>
-                      <div className="flex justify-end gap-2 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setCreateClientDialogOpen(false)}
-                          className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
-                        >
-                          Annuleren
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={isCreatingClient}
-                          className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
-                        >
-                          {isCreatingClient ? "Opslaan..." : "Opslaan"}
-                        </button>
-                      </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
-
-            <ul className="space-y-1">
-              {clients.map((client) => {
-                const isActive = client.id === selectedClientId;
-
-                return (
-                  <li key={client.id}>
-                    <button
-                      onClick={() => setSelectedClientId(client.id)}
-                      className={[
-                        "group w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-left transition",
-                        "hover:bg-slate-100/70",
-                        isActive
-                          ? "bg-slate-100 text-slate-900"
-                          : "text-slate-700",
-                      ].join(" ")}
-                    >
-                      <div className="size-8 rounded-lg overflow-hidden bg-white ring-1 ring-slate-200/70 flex items-center justify-center">
-                        {client.avatarUrl ? (
-                          <Image
-                            src={client.avatarUrl}
-                            alt={client.name}
-                            width={32}
-                            height={32}
-                            className="size-8 object-cover"
-                            unoptimized
-                          />
-                        ) : (
-                          <UserRound className="size-4 text-slate-400" />
-                        )}
-                      </div>
-
-                      <span className="truncate text-sm font-medium flex-1">
-                        {client.name}
-                      </span>
-
-                      {/* subtle active indicator */}
-                      <span
-                        className={[
-                          "h-6 w-0.5 rounded-full transition-opacity",
-                          isActive ? "bg-slate-900 opacity-100" : "opacity-0",
-                        ].join(" ")}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* Tools */}
-          <div>
-            <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Tools
-            </p>
-
-            <ul className="space-y-1">
-              {toolLinks.map(({ label, icon: Icon }) => {
-                const restricted = label === "Rapportages" && !isAdmin;
-
-                // Settings (kept your dialog logic, streamlined button styling)
-                if (label === "Instellingen") {
-                  return (
-                    <li key={label}>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100/70">
-                            <Icon className="size-4 text-slate-400" />
-                            {label}
-                          </button>
-                        </DialogTrigger>
-
-                        <DialogContent className="max-w-3xl border-none bg-transparent p-0 shadow-none sm:max-w-3xl">
-                          <div className="flex h-[520px] max-h-[85vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl md:flex-row">
-                            <div className="w-full border-b border-slate-100 bg-slate-50/80 p-4 md:w-[220px] md:border-b-0 md:border-r md:p-6">
-                              <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Instellingen
-                              </p>
-                              <div className="flex flex-row flex-wrap gap-2 md:flex-col md:flex-nowrap">
-                                {settingsSections.map((section) => {
-                                  const isActive =
-                                    section.id === activeSettingsTab;
-                                  return (
-                                    <button
-                                      key={section.id}
-                                      type="button"
-                                      onClick={() =>
-                                        setActiveSettingsTab(section.id)
-                                      }
-                                      className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-medium transition ${
-                                        isActive
-                                          ? "border-slate-200 bg-white text-slate-900"
-                                          : "border-transparent text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-900"
-                                      }`}
-                                    >
-                                      {section.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            <div className="flex flex-1 flex-col bg-gradient-to-b from-white to-slate-50/50">
-                              <div className="border-b border-slate-100 p-6">
-                                <DialogTitle className="text-lg font-semibold text-slate-900">
-                                  {activeSettings?.title}
-                                </DialogTitle>
-                                {activeSettings?.description && (
-                                  <DialogDescription className="text-slate-500">
-                                    {activeSettings.description}
-                                  </DialogDescription>
-                                )}
-                              </div>
-                              <div className="flex-1 overflow-y-auto p-6">
-                                {activeSettingsTab === "profile" && (
-                                  <form
-                                    onSubmit={handleUserSave}
-                                    className="space-y-4"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
-                                        {userAvatarFile ? (
-                                          <>
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                              src={URL.createObjectURL(
-                                                userAvatarFile
-                                              )}
-                                              alt="Nieuwe avatar"
-                                              className="size-16 object-cover"
-                                            />
-                                          </>
-                                        ) : currentUser.image ? (
-                                          <Image
-                                            src={currentUser.image}
-                                            alt={currentUser.name}
-                                            width={64}
-                                            height={64}
-                                            className="size-16 object-cover"
-                                            unoptimized
-                                          />
-                                        ) : currentUser.name ? (
-                                          <span className="text-base font-semibold">
-                                            {getInitials(currentUser.name)}
-                                          </span>
-                                        ) : (
-                                          <UserRound className="size-6 text-slate-400" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-semibold text-slate-700">
-                                          Profielfoto
-                                        </p>
-                                        <div className="mt-1 flex items-center gap-2">
-                                          <input
-                                            id={userAvatarInputId}
-                                            type="file"
-                                            accept="image/*"
-                                            className="sr-only"
-                                            onChange={(event) =>
-                                              setUserAvatarFile(
-                                                event.target.files?.[0] ?? null
-                                              )
-                                            }
-                                          />
-                                          <label
-                                            htmlFor={userAvatarInputId}
-                                            className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                                          >
-                                            Kies bestand
-                                          </label>
-                                          <span className="text-xs text-slate-500">
-                                            {userAvatarFile
-                                              ? userAvatarFile.name
-                                              : currentUser.image
-                                              ? "Huidige foto ingesteld"
-                                              : "Geen bestand geselecteerd"}
-                                          </span>
-                                        </div>
-                                        <p className="mt-1 text-[11px] text-slate-500">
-                                          PNG of JPG, maximaal 5 MB.
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <label className="flex flex-col gap-1 text-sm">
-                                      Naam
-                                      <input
-                                        type="text"
-                                        value={userForm.name}
-                                        onChange={(event) =>
-                                          setUserForm((form) => ({
-                                            ...form,
-                                            name: event.target.value,
-                                          }))
-                                        }
-                                        className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                                        required
-                                      />
-                                    </label>
-                                    <p className="text-xs text-slate-500">
-                                      Ingelogd als {currentUser.email}
-                                    </p>
-                                    <button
-                                      type="submit"
-                                      disabled={isUserSaving}
-                                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                                    >
-                                      {isUserSaving ? "Opslaan..." : "Opslaan"}
-                                    </button>
-                                  </form>
-                                )}
-                                {activeSettingsTab === "prompts" && isAdmin && (
-                                  <div className="space-y-6">
-                                    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                                      <div>
-                                        <p className="text-sm font-medium text-slate-900">
-                                          AI-modellen
-                                        </p>
-                                        <p className="text-xs text-slate-500">
-                                          Kies welk OpenAI-model wordt gebruikt
-                                          voor de coach en de overzichtscoach.
-                                        </p>
-                                      </div>
-                                      {isModelLoading ? (
-                                        <p className="text-sm text-slate-500">
-                                          AI-modellen worden geladen...
-                                        </p>
-                                      ) : availableModels.length === 0 ? (
-                                        <p className="text-sm text-slate-500">
-                                          Geen modelopties gevonden. Voeg
-                                          modellen toe in de configuratie.
-                                        </p>
-                                      ) : (
-                                        <form
-                                          onSubmit={handleModelSave}
-                                          className="space-y-3"
-                                        >
-                                          <label className="flex flex-col gap-1 text-sm">
-                                            Coach assistent
-                                            <select
-                                              value={coachModel}
-                                              onChange={(event) =>
-                                                setCoachModel(event.target.value)
-                                              }
-                                              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
-                                              required
-                                            >
-                                              <option value="" disabled>
-                                                Kies een model
-                                              </option>
-                                              {availableModels.map((option) => (
-                                                <option
-                                                  key={option.value}
-                                                  value={option.value}
-                                                >
-                                                  {option.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                            <span className="text-xs text-slate-500">
-                                              Wordt gebruikt voor het
-                                              cliëntgesprek.
-                                            </span>
-                                          </label>
-
-                                          <label className="flex flex-col gap-1 text-sm">
-                                            Overzichtscoach
-                                            <select
-                                              value={overseerModel}
-                                              onChange={(event) =>
-                                                setOverseerModel(
-                                                  event.target.value
-                                                )
-                                              }
-                                              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
-                                              required
-                                            >
-                                              <option value="" disabled>
-                                                Kies een model
-                                              </option>
-                                              {availableModels.map((option) => (
-                                                <option
-                                                  key={option.value}
-                                                  value={option.value}
-                                                >
-                                                  {option.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                            <span className="text-xs text-slate-500">
-                                              Voor analyses over alle cliënten.
-                                            </span>
-                                          </label>
-
-                                          <div className="flex justify-end">
-                                            <button
-                                              type="submit"
-                                              disabled={isModelSaving}
-                                              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                                            >
-                                              {isModelSaving
-                                                ? "Opslaan..."
-                                                : "AI-modellen opslaan"}
-                                            </button>
-                                          </div>
-                                        </form>
-                                      )}
-                                    </div>
-
-                                    {isCoachPromptLoading ? (
-                                      <p className="text-sm text-slate-500">
-                                        Coachprompt wordt geladen...
-                                      </p>
-                                    ) : (
-                                      <form
-                                        onSubmit={handleCoachPromptSave}
-                                        className="space-y-3"
-                                      >
-                                        <div>
-                                          <p className="text-sm font-medium text-slate-900">
-                                            Coach Prompt
-                                          </p>
-                                          <p className="text-xs text-slate-500">
-                                            Instructies voor de individuele
-                                            coach.
-                                          </p>
-                                        </div>
-                                        <textarea
-                                          value={coachPrompt}
-                                          onChange={(event) =>
-                                            setCoachPrompt(event.target.value)
-                                          }
-                                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
-                                        />
-                                        <div className="flex items-center justify-between text-xs text-slate-500">
-                                          <p>
-                                            Laatst bijgewerkt:{" "}
-                                            {coachPromptUpdatedAt
-                                              ? new Date(
-                                                  coachPromptUpdatedAt
-                                                ).toLocaleString()
-                                              : "Onbekend"}
-                                          </p>
-                                          <button
-                                            disabled={isCoachPromptSaving}
-                                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                                          >
-                                            {isCoachPromptSaving
-                                              ? "Opslaan..."
-                                              : "Opslaan"}
-                                          </button>
-                                        </div>
-                                      </form>
-                                    )}
-
-                                    {isOverseerPromptLoading ? (
-                                      <p className="text-sm text-slate-500">
-                                        Overzichtsprompt wordt geladen...
-                                      </p>
-                                    ) : (
-                                      <form
-                                        onSubmit={handleOverseerPromptSave}
-                                        className="space-y-3"
-                                      >
-                                        <div>
-                                          <p className="text-sm font-medium text-slate-900">
-                                            Overzichtscoach Prompt
-                                          </p>
-                                          <p className="text-xs text-slate-500">
-                                            Richtlijnen voor programma-analyses
-                                            en trends.
-                                          </p>
-                                        </div>
-                                        <textarea
-                                          value={overseerPrompt}
-                                          onChange={(event) =>
-                                            setOverseerPrompt(
-                                              event.target.value
-                                            )
-                                          }
-                                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
-                                        />
-                                        <div className="flex items-center justify-between text-xs text-slate-500">
-                                          <p>
-                                            Laatst bijgewerkt:{" "}
-                                            {overseerPromptUpdatedAt
-                                              ? new Date(
-                                                  overseerPromptUpdatedAt
-                                                ).toLocaleString()
-                                              : "Onbekend"}
-                                          </p>
-                                          <button
-                                            disabled={isOverseerPromptSaving}
-                                            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-50"
-                                          >
-                                            {isOverseerPromptSaving
-                                              ? "Opslaan..."
-                                              : "Opslaan"}
-                                          </button>
-                                        </div>
-                                      </form>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </li>
-                  );
-                }
-
-                return (
-                  <li key={label}>
-                    <button
-                      disabled={restricted}
-                      className={[
-                        "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
-                        restricted
-                          ? "text-slate-400 cursor-not-allowed"
-                          : "text-slate-700 hover:bg-slate-100/70",
-                      ].join(" ")}
-                    >
-                      <Icon className="size-4 text-slate-400" />
-                      {label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </nav>
-
-        <div className="px-4">
-          <div className="h-px bg-slate-200/60" />
-        </div>
-
-        {/* Footer */}
-        <div className="p-3">
-          <button
-            onClick={handleSignOut}
-            disabled={isSigningOut}
-            className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100/70 disabled:opacity-50"
-          >
-            <LogOut className="size-4 text-slate-400" />
-            Uitloggen
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden bg-slate-50">
-        {/* Top Header Bar: Flat, bordered */}
-        <header className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-slate-900">
-              {selectedClient ? selectedClient.name : "Dashboard"}
-            </h1>
-            {selectedClient && (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
-                Actief
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {isAdmin && selectedClient && (
-              <Dialog
-                open={isClientDialogOpen}
-                onOpenChange={(open) => {
-                  setClientDialogOpen(open);
-                  if (open) {
-                    setClientForm({
-                      name: selectedClient.name,
-                      focusArea: selectedClient.focusArea,
-                      summary: selectedClient.summary,
-                      goals: selectedClient.goals.join(", "),
-                    });
-                    setEditingClientId(selectedClient.id);
-                  } else {
-                    setEditingClientId(null);
-                    setAvatarFile(null);
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                    Cliënt bewerken
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl space-y-4">
-                  <DialogHeader>
-                    <DialogTitle>
-                      Gegevens van {selectedClient.name}
-                    </DialogTitle>
-                    <DialogDescription>
-                      Pas de basisinformatie en doelen van de cliënt aan.
-                    </DialogDescription>
-                  </DialogHeader>
-                    <form className="space-y-4" onSubmit={handleClientSave}>
-                      <div className="flex items-center gap-3">
-                        <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
-                          {avatarFile ? (
-                            <>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={URL.createObjectURL(avatarFile)}
-                                alt="Voorbeeld avatar"
-                                className="size-16 object-cover"
-                              />
-                            </>
-                          ) : selectedClient.avatarUrl ? (
-                            <>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={selectedClient.avatarUrl}
-                                alt={selectedClient.name}
-                                className="size-16 object-cover"
-                              />
-                            </>
-                          ) : selectedClientInitials ? (
-                            <span className="text-base font-semibold">
-                              {selectedClientInitials}
-                            </span>
-                          ) : (
-                            <UserRound className="size-6 text-slate-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-slate-700">
-                            Profielfoto
-                          </p>
-                          <div className="mt-1 flex items-center gap-2">
-                            <input
-                              id={editClientAvatarInputId}
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={(event) =>
-                                setAvatarFile(event.target.files?.[0] ?? null)
-                              }
-                            />
-                            <label
-                              htmlFor={editClientAvatarInputId}
-                              className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Kies bestand
-                            </label>
-                            <span className="text-xs text-slate-500">
-                              {avatarFile
-                                ? avatarFile.name
-                                : selectedClient.avatarUrl
-                                ? "Huidige foto ingesteld"
-                                : "Geen bestand geselecteerd"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            PNG of JPG, maximaal 5 MB.
-                          </p>
-                        </div>
-                      </div>
-                    <label className="flex flex-col gap-1 text-sm">
-                      Naam
-                      <input
-                        type="text"
-                        value={clientForm.name}
-                        onChange={(event) =>
-                          setClientForm((form) => ({
-                            ...form,
-                            name: event.target.value,
-                          }))
-                        }
-                        className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                        required
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm">
-                      Focusgebied
-                      <input
-                        type="text"
-                        value={clientForm.focusArea}
-                        onChange={(event) =>
-                          setClientForm((form) => ({
-                            ...form,
-                            focusArea: event.target.value,
-                          }))
-                        }
-                        className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm">
-                      Samenvatting
-                      <textarea
-                        value={clientForm.summary}
-                        onChange={(event) =>
-                          setClientForm((form) => ({
-                            ...form,
-                            summary: event.target.value,
-                          }))
-                        }
-                        rows={4}
-                        className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm">
-                      Doelen (gescheiden door komma)
-                      <textarea
-                        value={clientForm.goals}
-                        onChange={(event) =>
-                          setClientForm((form) => ({
-                            ...form,
-                            goals: event.target.value,
-                          }))
-                        }
-                        rows={3}
-                        className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
-                        placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
-                      />
-                    </label>
-                    <div className="flex justify-end gap-2 text-sm">
-                      <button
-                        type="button"
-                        onClick={() => setClientDialogOpen(false)}
-                        className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
-                      >
-                        Annuleren
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isClientSaving}
-                        className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
-                      >
-                        {isClientSaving ? "Opslaan..." : "Opslaan"}
-                      </button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
-            {error && (
-              <div className="px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 text-xs font-medium rounded-lg">
-                {error}
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* Scrollable Dashboard Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-8xl mx-auto space-y-4 pb-4">
-            {/* Context Cards: Flat, white background, thin grey border */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Profile Card */}
-              <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="size-12 rounded-xl bg-slate-100 flex items-center justify-center">
-                      {selectedClient?.avatarUrl ? (
-                        <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={selectedClient.avatarUrl}
-                            alt={selectedClient.name}
-                            className="size-12 rounded-xl object-cover"
-                          />
-                        </>
-                      ) : (
-                        <UserRound className="size-5 text-slate-400" />
-                      )}
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900">
-                        Profiel Samenvatting
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        {selectedClient?.focusArea || "Geen focusgebied"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  {selectedClient?.summary || "Selecteer een cliënt."}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {selectedClient?.focusArea.split(",").map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium border border-slate-200 capitalize"
-                    >
-                      {tag.trim()}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Goals Card - Flat white instead of colored block */}
-              <div className="bg-white rounded-xl border border-slate-200 p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-slate-900">
-                    Doelen
-                  </h3>
-                  <Target className="size-5 text-slate-400" />
-                </div>
-                <ul className="space-y-3">
-                  {selectedClient?.goals.length ? (
-                    selectedClient.goals.map((goal, i) => (
-                      <li
-                        key={i}
-                        className="text-sm flex gap-3 items-start text-slate-700"
-                      >
-                        <span className="font-medium text-slate-400">
-                          {i + 1}.
-                        </span>
-                        <span className="leading-tight">{goal}</span>
-                      </li>
-                    ))
-                  ) : (
-                    <p className="text-sm text-slate-500 italic">
-                      Geen doelen ingesteld.
-                    </p>
-                  )}
-                </ul>
-              </div>
-
-              {/* AI Insights Panel - Removed amber styling, kept it flat white */}
-              <div className="bg-white col-span-3 rounded-xl border border-slate-200 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Lightbulb className="size-5 text-slate-400" />
-                  <h3 className="text-base font-semibold text-slate-900">
-                    Laatste Inzicht
-                  </h3>
-                </div>
-                <p className="text-sm text-slate-600 italic leading-relaxed">
-                  {latestCoachFeedback}
-                </p>
-              </div>
-            </div>
-
-            {/* Bottom Row: Chat Area and Insights Sidebar */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-              {/* Main Chat Interface */}
-              <div className="lg:col-span-2 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden h-[800px]">
-                <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-4 bg-white">
-                  <button
-                    onClick={() => setActiveChannel("coach")}
-                    className={`text-sm font-medium transition-colors ${
-                      activeChannel === "coach"
-                        ? "text-slate-900"
-                        : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    Coach Assistent
-                  </button>
-                  <div className="w-px h-3 bg-[#DDDDDD]" />
-                  <button
-                    onClick={() => setActiveChannel("meta")}
-                    className={`text-sm font-medium transition-colors ${
-                      activeChannel === "meta"
-                        ? "text-slate-900"
-                        : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    Meta AI Twin
-                  </button>
-                </div>
-
-                {activeChannel === "coach" ? (
-                  <>
-                    <div
-                      ref={coachMessagesRef}
-                      className="flex-1 overflow-y-auto p-6 space-y-6 bg-white"
-                    >
-                      {messages.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                          <MessageSquare className="size-6 mb-2 opacity-50" />
-                          <p className="text-sm">Start een gesprek.</p>
-                        </div>
-                      ) : (
-                        messages.map((message) => {
-                          const isAi =
-                            message.role === "assistant" ||
-                            message.role === "system";
-                          return (
-                            <div
-                              key={message.id}
-                              className={`flex ${
-                                isAi ? "justify-start" : "justify-end"
-                              }`}
-                            >
-                              <div
-                                className={`max-w-[85%] px-4 py-3 rounded-xl text-sm leading-relaxed ${
-                                  isAi
-                                    ? "bg-slate-50 border border-slate-200 text-slate-800"
-                                    : "bg-indigo-600 text-white"
-                                }`}
-                              >
-                                <p className="whitespace-pre-wrap">
-                                  {message.content}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                    <form
-                      onSubmit={handleCoachSubmit}
-                      className="p-4 bg-white pt-2 border-slate-200"
-                    >
-                      <div className="relative flex gap-2">
-                        <textarea
-                          value={coachInput}
-                          onChange={(event) =>
-                            setCoachInput(event.target.value)
-                          }
-                          placeholder="Schrijf een bericht..."
-                          className="flex-1 p-3 bg-white border border-slate-300 rounded-lg text-sm focus:border-slate-400 focus:ring-0 resize-none placeholder:text-slate-400"
-                          rows={1}
-                          style={{ minHeight: "44px", maxHeight: "120px" }}
-                        />
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={handleAttachmentButtonClick}
-                            className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                          >
-                            <Paperclip className="size-5" />
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={!selectedClient || isCoachLoading}
-                            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium text-sm"
-                          >
-                            Versturen
-                          </button>
-                        </div>
-                      </div>
-                      <input
-                        ref={attachmentInputRef}
-                        type="file"
-                        className="sr-only"
-                        onChange={handleAttachmentChange}
-                      />
-                    </form>
-                    {selectedClient && (
-                      <div className="border-t border-slate-200 p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <p className="text-sm font-semibold text-slate-900">
-                            Documenten
-                          </p>
-                          {isDocUploading && (
-                            <span className="text-xs text-slate-500">
-                              Uploaden…
-                            </span>
-                          )}
-                        </div>
-                        {documents.length === 0 ? (
-                          <p className="text-sm text-slate-500">
-                            Nog geen bestanden.
-                          </p>
-                        ) : (
-                          <div className="max-h-40 space-y-2 overflow-y-auto">
-                            {documents.map((doc) => (
-                              <div
-                                key={doc.id}
-                                className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-slate-900">
-                                      {doc.originalName}
-                                    </p>
-                                    <p className="text-xs text-slate-500">
-                                      {(doc.size / 1024).toFixed(1)} KB
-                                    </p>
-                                  </div>
-                                  <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                                    {doc.kind === "AUDIO" ? "Audio" : "Tekst"}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
+    <>
+      {/* Used a very flat light grey background for the app container */}
+      <div className="flex h-screen max-h-screen w-full bg-slate-50 text-slate-900 overflow-hidden">
+        {/* Sidebar: Flat, bordered, minimal */}
+        <aside className="w-72 shrink-0 border-r border-slate-200/60 bg-white/80 backdrop-blur flex flex-col">
+          {/* Header */}
+          <div className="">
+            <div className="flex items-center gap-3 px-4 pt-4 pb-2">
+              <div className="size-9 shrink-0 rounded-xl bg-slate-900 text-white overflow-hidden ring-1 ring-slate-900/10">
+                {currentUser.image ? (
+                  <Image
+                    src={currentUser.image}
+                    alt={currentUser.name}
+                    width={36}
+                    height={36}
+                    className="size-9 object-cover"
+                    unoptimized
+                  />
                 ) : (
-                  <>
-                    <div
-                      ref={overseerMessagesRef}
-                      className="flex-1 overflow-y-auto p-6 space-y-3 bg-white"
-                    >
-                      {overseerThread.length === 0 ? (
-                        <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-                          Vraag de overzichtscoach om trends of risico&#39;s.
-                        </div>
-                      ) : (
-                        overseerThread.map((message) => (
-                          <div
-                            key={message.id}
-                            className={`rounded-lg border px-3 py-2 text-sm ${
-                              message.role === "assistant"
-                                ? "border-purple-200 bg-white text-slate-900"
-                                : "border-slate-200 bg-white"
-                            }`}
-                          >
-                            <p className="text-xs uppercase text-slate-500">
-                              {message.role}
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap">
-                              {message.content}
-                            </p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <form
-                      onSubmit={handleOverseerSubmit}
-                      className="p-4 bg-white border-t border-slate-200"
-                    >
-                      <textarea
-                        value={overseerInput}
-                        onChange={(event) =>
-                          setOverseerInput(event.target.value)
-                        }
-                        placeholder="Vraag naar trends, risico&#39;s..."
-                        disabled={isOverseerLoading}
-                        className="w-full resize-none rounded-lg border border-slate-300 p-3 text-sm focus:border-purple-500 focus:ring-0 placeholder:text-slate-400"
-                        rows={2}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!overseerInput.trim() || isOverseerLoading}
-                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-40"
-                      >
-                        Verstuur
-                      </button>
-                    </form>
-                  </>
+                  <span className="flex h-full w-full items-center justify-center text-sm font-semibold">
+                    {userInitial}
+                  </span>
                 )}
               </div>
 
-              {/* Insights and Documents Sidebar: Flat cards */}
-              <div className="space-y-6">
-                {/* Growth Checklist */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <CheckCircle2 className="size-5 text-slate-400" />
-                    <h3 className="text-base font-semibold text-slate-900">
-                      Sterktes & Aandachtspunten
-                    </h3>
-                  </div>
-                  <ul className="space-y-3">
-                    {strengthsAndWatchouts.map((item, idx) => (
-                      <li
-                        key={idx}
-                        className="flex gap-3 text-sm text-slate-700"
-                      >
-                        <div className="mt-1.5 size-1.5 rounded-full bg-slate-300 shrink-0" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {currentUser.name}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {isAdmin ? "Administrator" : "Coach"}
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+
+          {/* Nav */}
+          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+            {/* Clients */}
+            <div>
+              <div className="mb-2 flex items-center justify-between px-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Cliënten
+                </p>
+                {isAdmin && (
+                  <Dialog
+                    open={isCreateClientDialogOpen}
+                    onOpenChange={(open) => {
+                      setCreateClientDialogOpen(open);
+                      if (!open) {
+                        setNewClientForm({
+                          name: "",
+                          focusArea: "",
+                          summary: "",
+                          goals: "",
+                        });
+                        setNewClientAvatarFile(null);
+                      }
+                    }}
+                  >
+                    <DialogTrigger asChild>
+                      <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-100/70">
+                        <Plus className="size-3.5" />
+                        Nieuw
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-xl space-y-4">
+                      <DialogHeader>
+                        <DialogTitle>Nieuwe cliënt</DialogTitle>
+                        <DialogDescription>
+                          Voeg een nieuwe coachee toe aan het systeem.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <form
+                        className="space-y-4"
+                        onSubmit={handleNewClientSubmit}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 overflow-hidden flex items-center justify-center">
+                            {newClientAvatarFile ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={URL.createObjectURL(newClientAvatarFile)}
+                                  alt="Voorbeeld avatar"
+                                  className="size-16 object-cover"
+                                />
+                              </>
+                            ) : newClientInitials ? (
+                              <span className="text-base font-semibold">
+                                {newClientInitials}
+                              </span>
+                            ) : (
+                              <UserRound className="size-6 text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700">
+                              Profielfoto
+                            </p>
+                            <div className="mt-1 flex items-center gap-2">
+                              <input
+                                id={newClientAvatarInputId}
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={(event) =>
+                                  setNewClientAvatarFile(
+                                    event.target.files?.[0] ?? null
+                                  )
+                                }
+                              />
+                              <label
+                                htmlFor={newClientAvatarInputId}
+                                className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Kies bestand
+                              </label>
+                              <span className="text-xs text-slate-500">
+                                {newClientAvatarFile
+                                  ? newClientAvatarFile.name
+                                  : "Geen bestand geselecteerd"}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              PNG of JPG, maximaal 5 MB.
+                            </p>
+                          </div>
+                        </div>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Naam
+                          <input
+                            type="text"
+                            value={newClientForm.name}
+                            onChange={(event) =>
+                              setNewClientForm((form) => ({
+                                ...form,
+                                name: event.target.value,
+                              }))
+                            }
+                            className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            required
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Focusgebied
+                          <input
+                            type="text"
+                            value={newClientForm.focusArea}
+                            onChange={(event) =>
+                              setNewClientForm((form) => ({
+                                ...form,
+                                focusArea: event.target.value,
+                              }))
+                            }
+                            className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Samenvatting
+                          <textarea
+                            value={newClientForm.summary}
+                            onChange={(event) =>
+                              setNewClientForm((form) => ({
+                                ...form,
+                                summary: event.target.value,
+                              }))
+                            }
+                            rows={4}
+                            className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Doelen (gescheiden door komma)
+                          <textarea
+                            value={newClientForm.goals}
+                            onChange={(event) =>
+                              setNewClientForm((form) => ({
+                                ...form,
+                                goals: event.target.value,
+                              }))
+                            }
+                            rows={3}
+                            className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
+                          />
+                        </label>
+                        <div className="flex justify-end gap-2 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => setCreateClientDialogOpen(false)}
+                            className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
+                          >
+                            Annuleren
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isCreatingClient}
+                            className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                          >
+                            {isCreatingClient ? "Opslaan..." : "Opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+
+              <ul className="space-y-1">
+                {clients.map((client) => {
+                  const isActive = client.id === selectedClientId;
+
+                  return (
+                    <li key={client.id}>
+                      <button
+                        onClick={() => {
+                          setSelectedClientId(client.id);
+                          setActiveSidebarTab("dashboard");
+                        }}
+                        className={[
+                          "group w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-left transition",
+                          "hover:bg-slate-100/70",
+                          isActive
+                            ? "bg-slate-100 text-slate-900"
+                            : "text-slate-700",
+                        ].join(" ")}
+                      >
+                        <div className="size-8 rounded-lg overflow-hidden bg-white ring-1 ring-slate-200/70 flex items-center justify-center">
+                          {client.avatarUrl ? (
+                            <Image
+                              src={client.avatarUrl}
+                              alt={client.name}
+                              width={32}
+                              height={32}
+                              className="size-8 object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <UserRound className="size-4 text-slate-400" />
+                          )}
+                        </div>
+
+                        <span className="truncate text-sm font-medium flex-1">
+                          {client.name}
+                        </span>
+
+                        {/* subtle active indicator */}
+                        <span
+                          className={[
+                            "h-6 w-0.5 rounded-full transition-opacity",
+                            isActive ? "bg-slate-900 opacity-100" : "opacity-0",
+                          ].join(" ")}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {/* Tools */}
+            <div>
+              <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Tools
+              </p>
+
+              <ul className="space-y-1">
+                {isAdmin && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSidebarTab("prompt-center")}
+                      className={[
+                        "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
+                        activeSidebarTab === "prompt-center"
+                          ? "bg-amber-50 text-amber-900 border border-amber-200"
+                          : "text-slate-700 hover:bg-slate-100/70",
+                      ].join(" ")}
+                    >
+                      <Sparkles className="size-4 text-amber-500" />
+                      AI Promptcenter
+                    </button>
+                  </li>
+                )}
+                {toolLinks.map(({ label, icon: Icon }) => {
+                  const restricted = label === "Rapportages" && !isAdmin;
+
+                  // Settings (kept your dialog logic, streamlined button styling)
+                  if (label === "Instellingen") {
+                    return (
+                      <li key={label}>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <button className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100/70">
+                              <Icon className="size-4 text-slate-400" />
+                              {label}
+                            </button>
+                          </DialogTrigger>
+
+                          <DialogContent className="max-w-3xl border-none bg-transparent p-0 shadow-none sm:max-w-3xl">
+                            <div className="flex h-[520px] max-h-[85vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl md:flex-row">
+                              <div className="w-full border-b border-slate-100 bg-slate-50/80 p-4 md:w-[220px] md:border-b-0 md:border-r md:p-6">
+                                <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Instellingen
+                                </p>
+                                <div className="flex flex-row flex-wrap gap-2 md:flex-col md:flex-nowrap">
+                                  {settingsSections.map((section) => {
+                                    const isActive =
+                                      section.id === activeSettingsTab;
+                                    return (
+                                      <button
+                                        key={section.id}
+                                        type="button"
+                                        onClick={() =>
+                                          setActiveSettingsTab(section.id)
+                                        }
+                                        className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-medium transition ${
+                                          isActive
+                                            ? "border-slate-200 bg-white text-slate-900"
+                                            : "border-transparent text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-900"
+                                        }`}
+                                      >
+                                        {section.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="flex flex-1 flex-col bg-gradient-to-b from-white to-slate-50/50">
+                                <div className="border-b border-slate-100 p-6">
+                                  <DialogTitle className="text-lg font-semibold text-slate-900">
+                                    {activeSettings?.title}
+                                  </DialogTitle>
+                                  {activeSettings?.description && (
+                                    <DialogDescription className="text-slate-500">
+                                      {activeSettings.description}
+                                    </DialogDescription>
+                                  )}
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-6">
+                                  {activeSettingsTab === "profile" && (
+                                    <form
+                                      onSubmit={handleUserSave}
+                                      className="space-y-4"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
+                                          {userAvatarFile ? (
+                                            <>
+                                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                                              <img
+                                                src={URL.createObjectURL(
+                                                  userAvatarFile
+                                                )}
+                                                alt="Nieuwe avatar"
+                                                className="size-16 object-cover"
+                                              />
+                                            </>
+                                          ) : currentUser.image ? (
+                                            <Image
+                                              src={currentUser.image}
+                                              alt={currentUser.name}
+                                              width={64}
+                                              height={64}
+                                              className="size-16 object-cover"
+                                              unoptimized
+                                            />
+                                          ) : currentUser.name ? (
+                                            <span className="text-base font-semibold">
+                                              {getInitials(currentUser.name)}
+                                            </span>
+                                          ) : (
+                                            <UserRound className="size-6 text-slate-400" />
+                                          )}
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-semibold text-slate-700">
+                                            Profielfoto
+                                          </p>
+                                          <div className="mt-1 flex items-center gap-2">
+                                            <input
+                                              id={userAvatarInputId}
+                                              type="file"
+                                              accept="image/*"
+                                              className="sr-only"
+                                              onChange={(event) =>
+                                                setUserAvatarFile(
+                                                  event.target.files?.[0] ??
+                                                    null
+                                                )
+                                              }
+                                            />
+                                            <label
+                                              htmlFor={userAvatarInputId}
+                                              className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                            >
+                                              Kies bestand
+                                            </label>
+                                            <span className="text-xs text-slate-500">
+                                              {userAvatarFile
+                                                ? userAvatarFile.name
+                                                : currentUser.image
+                                                ? "Huidige foto ingesteld"
+                                                : "Geen bestand geselecteerd"}
+                                            </span>
+                                          </div>
+                                          <p className="mt-1 text-[11px] text-slate-500">
+                                            PNG of JPG, maximaal 5 MB.
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <label className="flex flex-col gap-1 text-sm">
+                                        Naam
+                                        <input
+                                          type="text"
+                                          value={userForm.name}
+                                          onChange={(event) =>
+                                            setUserForm((form) => ({
+                                              ...form,
+                                              name: event.target.value,
+                                            }))
+                                          }
+                                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                          required
+                                        />
+                                      </label>
+                                      <p className="text-xs text-slate-500">
+                                        Ingelogd als {currentUser.email}
+                                      </p>
+                                      <button
+                                        type="submit"
+                                        disabled={isUserSaving}
+                                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                                      >
+                                        {isUserSaving
+                                          ? "Opslaan..."
+                                          : "Opslaan"}
+                                      </button>
+                                    </form>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </li>
+                    );
+                  }
+
+                  return (
+                    <li key={label}>
+                      <button
+                        disabled={restricted}
+                        className={[
+                          "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
+                          restricted
+                            ? "text-slate-400 cursor-not-allowed"
+                            : "text-slate-700 hover:bg-slate-100/70",
+                        ].join(" ")}
+                      >
+                        <Icon className="size-4 text-slate-400" />
+                        {label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </nav>
+
+          <div className="px-4">
+            <div className="h-px bg-slate-200/60" />
+          </div>
+
+          {/* Footer */}
+          <div className="p-3">
+            <button
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100/70 disabled:opacity-50"
+            >
+              <LogOut className="size-4 text-slate-400" />
+              Uitloggen
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden bg-slate-50">
+          {activeSidebarTab === "prompt-center" ? (
+            <div className="flex h-full flex-col">
+              <header className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-900">
+                    Prompthistorie &amp; Feedback
+                  </h1>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSidebarTab("dashboard")}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
+                  >
+                    Terug naar dashboard
+                  </button>
+                </div>
+              </header>
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="mx-auto flex max-w-8xl flex-col gap-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          AI-modellen
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Kies welk model beide agenten gebruiken.
+                        </p>
+                      </div>
+                    </div>
+                    {isModelLoading ? (
+                      <p className="mt-3 text-sm text-slate-500">
+                        Modellen worden geladen...
+                      </p>
+                    ) : availableModels.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-500">
+                        Geen beschikbare modellen gevonden.
+                      </p>
+                    ) : (
+                      <form
+                        onSubmit={handleModelSave}
+                        className="mt-4 grid gap-4 lg:grid-cols-2"
+                      >
+                        <label className="flex flex-col gap-1 text-sm">
+                          Coach assistent
+                          <select
+                            value={coachModel}
+                            onChange={(event) =>
+                              setCoachModel(event.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            required
+                          >
+                            <option value="" disabled>
+                              Kies een model
+                            </option>
+                            {availableModels.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-xs text-slate-500">
+                            Wordt gebruikt voor cliëntgesprekken.
+                          </span>
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Overzichtscoach
+                          <select
+                            value={overseerModel}
+                            onChange={(event) =>
+                              setOverseerModel(event.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            required
+                          >
+                            <option value="" disabled>
+                              Kies een model
+                            </option>
+                            {availableModels.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-xs text-slate-500">
+                            Voor trendanalyses en overzichten.
+                          </span>
+                        </label>
+                        <div className="lg:col-span-2 flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={isModelSaving}
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            {isModelSaving
+                              ? "Opslaan..."
+                              : "AI-modellen opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {isCoachPromptLoading ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                        Coachprompt wordt geladen...
+                      </div>
+                    ) : (
+                      <form
+                        onSubmit={handleCoachPromptSave}
+                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                Coachprompt
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Laatste update:{" "}
+                                {coachPromptUpdatedAt
+                                  ? new Date(
+                                      coachPromptUpdatedAt
+                                    ).toLocaleString()
+                                  : "Onbekend"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handlePromptRegenerate("COACH")}
+                              disabled={
+                                isRefiningPrompt && refineTarget === "COACH"
+                              }
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {isRefiningPrompt && refineTarget === "COACH"
+                                ? "Herschrijven..."
+                                : "Herschrijf met feedback"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Gebruik dit om de toon en structuur van
+                            cliëntcoaching te sturen.
+                          </p>
+                        </div>
+                        <textarea
+                          value={coachPrompt}
+                          onChange={(event) =>
+                            setCoachPrompt(event.target.value)
+                          }
+                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={isCoachPromptSaving}
+                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            {isCoachPromptSaving ? "Opslaan..." : "Opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {isOverseerPromptLoading ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                        Overzichtsprompt wordt geladen...
+                      </div>
+                    ) : (
+                      <form
+                        onSubmit={handleOverseerPromptSave}
+                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                Overzichtscoach prompt
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Laatste update:{" "}
+                                {overseerPromptUpdatedAt
+                                  ? new Date(
+                                      overseerPromptUpdatedAt
+                                    ).toLocaleString()
+                                  : "Onbekend"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handlePromptRegenerate("OVERSEER")}
+                              disabled={
+                                isRefiningPrompt && refineTarget === "OVERSEER"
+                              }
+                              className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-white disabled:opacity-50"
+                            >
+                              {isRefiningPrompt && refineTarget === "OVERSEER"
+                                ? "Herschrijven..."
+                                : "Herschrijf met feedback"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Richtlijnen voor trend- en risicoanalyses.
+                          </p>
+                        </div>
+                        <textarea
+                          value={overseerPrompt}
+                          onChange={(event) =>
+                            setOverseerPrompt(event.target.value)
+                          }
+                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={isOverseerPromptSaving}
+                            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
+                          >
+                            {isOverseerPromptSaving ? "Opslaan..." : "Opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Feedback coach assistent
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Laatste {coachFeedbackItems.length || 0} items
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {coachFeedbackItems.length}
+                        </span>
+                      </div>
+                      {isFeedbackLoading ? (
+                        <p className="mt-3 text-sm text-slate-500">
+                          Feedback wordt geladen...
+                        </p>
+                      ) : coachFeedbackItems.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-500">
+                          Nog geen feedback voor deze agent.
+                        </p>
+                      ) : (
+                        <ul className="mt-4 space-y-3">
+                          {coachFeedbackItems.map((item) => (
+                            <li
+                              key={item.id}
+                              className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+                            >
+                              <p className="text-[11px] uppercase text-slate-400">
+                                {new Date(item.createdAt).toLocaleString()}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                {item.feedback}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Feedback overzichtscoach
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Laatste {overseerFeedbackItems.length || 0} items
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
+                          {overseerFeedbackItems.length}
+                        </span>
+                      </div>
+                      {isFeedbackLoading ? (
+                        <p className="mt-3 text-sm text-slate-500">
+                          Feedback wordt geladen...
+                        </p>
+                      ) : overseerFeedbackItems.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-500">
+                          Nog geen feedback voor deze agent.
+                        </p>
+                      ) : (
+                        <ul className="mt-4 space-y-3">
+                          {overseerFeedbackItems.map((item) => (
+                            <li
+                              key={item.id}
+                              className="rounded-xl border border-purple-100 bg-purple-50/40 p-3"
+                            >
+                              <p className="text-[11px] uppercase text-purple-400">
+                                {new Date(item.createdAt).toLocaleString()}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                {item.feedback}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Top Header Bar: Flat, bordered */}
+              <header className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-lg font-semibold text-slate-900">
+                    {selectedClient ? selectedClient.name : "Dashboard"}
+                  </h1>
+                  {selectedClient && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
+                      Actief
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {isAdmin && selectedClient && (
+                    <Dialog
+                      open={isClientDialogOpen}
+                      onOpenChange={(open) => {
+                        setClientDialogOpen(open);
+                        if (open) {
+                          setClientForm({
+                            name: selectedClient.name,
+                            focusArea: selectedClient.focusArea,
+                            summary: selectedClient.summary,
+                            goals: selectedClient.goals.join(", "),
+                          });
+                          setEditingClientId(selectedClient.id);
+                        } else {
+                          setEditingClientId(null);
+                          setAvatarFile(null);
+                        }
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          Cliënt bewerken
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-xl space-y-4">
+                        <DialogHeader>
+                          <DialogTitle>
+                            Gegevens van {selectedClient.name}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Pas de basisinformatie en doelen van de cliënt aan.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form className="space-y-4" onSubmit={handleClientSave}>
+                          <div className="flex items-center gap-3">
+                            <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
+                              {avatarFile ? (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={URL.createObjectURL(avatarFile)}
+                                    alt="Voorbeeld avatar"
+                                    className="size-16 object-cover"
+                                  />
+                                </>
+                              ) : selectedClient.avatarUrl ? (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={selectedClient.avatarUrl}
+                                    alt={selectedClient.name}
+                                    className="size-16 object-cover"
+                                  />
+                                </>
+                              ) : selectedClientInitials ? (
+                                <span className="text-base font-semibold">
+                                  {selectedClientInitials}
+                                </span>
+                              ) : (
+                                <UserRound className="size-6 text-slate-400" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-slate-700">
+                                Profielfoto
+                              </p>
+                              <div className="mt-1 flex items-center gap-2">
+                                <input
+                                  id={editClientAvatarInputId}
+                                  type="file"
+                                  accept="image/*"
+                                  className="sr-only"
+                                  onChange={(event) =>
+                                    setAvatarFile(
+                                      event.target.files?.[0] ?? null
+                                    )
+                                  }
+                                />
+                                <label
+                                  htmlFor={editClientAvatarInputId}
+                                  className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Kies bestand
+                                </label>
+                                <span className="text-xs text-slate-500">
+                                  {avatarFile
+                                    ? avatarFile.name
+                                    : selectedClient.avatarUrl
+                                    ? "Huidige foto ingesteld"
+                                    : "Geen bestand geselecteerd"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                PNG of JPG, maximaal 5 MB.
+                              </p>
+                            </div>
+                          </div>
+                          <label className="flex flex-col gap-1 text-sm">
+                            Naam
+                            <input
+                              type="text"
+                              value={clientForm.name}
+                              onChange={(event) =>
+                                setClientForm((form) => ({
+                                  ...form,
+                                  name: event.target.value,
+                                }))
+                              }
+                              className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                              required
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-sm">
+                            Focusgebied
+                            <input
+                              type="text"
+                              value={clientForm.focusArea}
+                              onChange={(event) =>
+                                setClientForm((form) => ({
+                                  ...form,
+                                  focusArea: event.target.value,
+                                }))
+                              }
+                              className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-sm">
+                            Samenvatting
+                            <textarea
+                              value={clientForm.summary}
+                              onChange={(event) =>
+                                setClientForm((form) => ({
+                                  ...form,
+                                  summary: event.target.value,
+                                }))
+                              }
+                              rows={4}
+                              className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-sm">
+                            Doelen (gescheiden door komma)
+                            <textarea
+                              value={clientForm.goals}
+                              onChange={(event) =>
+                                setClientForm((form) => ({
+                                  ...form,
+                                  goals: event.target.value,
+                                }))
+                              }
+                              rows={3}
+                              className="rounded-lg border border-slate-200 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                              placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
+                            />
+                          </label>
+                          <div className="flex justify-end gap-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => setClientDialogOpen(false)}
+                              className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
+                            >
+                              Annuleren
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={isClientSaving}
+                              className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                            >
+                              {isClientSaving ? "Opslaan..." : "Opslaan"}
+                            </button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                  {error && (
+                    <div className="px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 text-xs font-medium rounded-lg">
+                      {error}
+                    </div>
+                  )}
+                </div>
+              </header>
+
+              {/* Scrollable Dashboard Grid */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-8xl mx-auto space-y-4 pb-4">
+                  {/* Context Cards: Flat, white background, thin grey border */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Profile Card */}
+                    <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="size-12 rounded-xl bg-slate-100 flex items-center justify-center">
+                            {selectedClient?.avatarUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={selectedClient.avatarUrl}
+                                  alt={selectedClient.name}
+                                  className="size-12 rounded-xl object-cover"
+                                />
+                              </>
+                            ) : (
+                              <UserRound className="size-5 text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-semibold text-slate-900">
+                              Profiel Samenvatting
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                              {selectedClient?.focusArea || "Geen focusgebied"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        {selectedClient?.summary || "Selecteer een cliënt."}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {selectedClient?.focusArea.split(",").map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium border border-slate-200 capitalize"
+                          >
+                            {tag.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Goals Card - Flat white instead of colored block */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-semibold text-slate-900">
+                          Doelen
+                        </h3>
+                        <Target className="size-5 text-slate-400" />
+                      </div>
+                      <ul className="space-y-3">
+                        {selectedClient?.goals.length ? (
+                          selectedClient.goals.map((goal, i) => (
+                            <li
+                              key={i}
+                              className="text-sm flex gap-3 items-start text-slate-700"
+                            >
+                              <span className="font-medium text-slate-400">
+                                {i + 1}.
+                              </span>
+                              <span className="leading-tight">{goal}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">
+                            Geen doelen ingesteld.
+                          </p>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* AI Insights Panel - Removed amber styling, kept it flat white */}
+                    <div className="bg-white col-span-3 rounded-xl border border-slate-200 p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Lightbulb className="size-5 text-slate-400" />
+                        <h3 className="text-base font-semibold text-slate-900">
+                          Laatste Inzicht
+                        </h3>
+                      </div>
+                      <p className="text-sm text-slate-600 italic leading-relaxed">
+                        {latestCoachFeedback}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Chat Area and Insights Sidebar */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                    {/* Main Chat Interface */}
+                    <div className="lg:col-span-2 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden h-[800px]">
+                      <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-4 bg-white">
+                        <button
+                          onClick={() => setActiveChannel("coach")}
+                          className={`text-sm font-medium transition-colors ${
+                            activeChannel === "coach"
+                              ? "text-slate-900"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Coach Assistent
+                        </button>
+                        <div className="w-px h-3 bg-[#DDDDDD]" />
+                        <button
+                          onClick={() => setActiveChannel("meta")}
+                          className={`text-sm font-medium transition-colors ${
+                            activeChannel === "meta"
+                              ? "text-slate-900"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Meta AI Twin
+                        </button>
+                      </div>
+
+                      {activeChannel === "coach" ? (
+                        <>
+                          <div
+                            ref={coachMessagesRef}
+                            className="flex-1 overflow-y-auto p-6 space-y-4 bg-white"
+                          >
+                            {messages.length === 0 ? (
+                              <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                <MessageSquare className="size-6 mb-2 opacity-50" />
+                                <p className="text-sm">Start een gesprek.</p>
+                              </div>
+                            ) : (
+                              messages.map((message) => {
+                                const isAi =
+                                  message.role === "assistant" ||
+                                  message.role === "system";
+                                return (
+                                  <div
+                                    key={message.id}
+                                    className={`flex ${
+                                      isAi ? "justify-start" : "justify-end"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`max-w-[85%] px-4 py-3 rounded-xl text-sm leading-relaxed ${
+                                        isAi
+                                          ? "bg-slate-50 border border-slate-200 text-slate-800"
+                                          : "bg-indigo-600 text-white"
+                                      }`}
+                                    >
+                                      <p className="whitespace-pre-wrap">
+                                        {message.content}
+                                      </p>
+                                    </div>
+                                    {isAdmin &&
+                                      message.role === "assistant" &&
+                                      isAi && (
+                                        <div
+                                          className={`mt-2 text-[11px] ${
+                                            isAi ? "text-left" : "text-right"
+                                          }`}
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openFeedbackDialog(
+                                                "COACH",
+                                                message
+                                              )
+                                            }
+                                            className="text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                                          >
+                                            Geef feedback
+                                          </button>
+                                        </div>
+                                      )}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                          <form
+                            onSubmit={handleCoachSubmit}
+                            className="p-4 bg-white pt-2 border-slate-200"
+                          >
+                            <div className="relative flex gap-2">
+                              <textarea
+                                value={coachInput}
+                                onChange={(event) =>
+                                  setCoachInput(event.target.value)
+                                }
+                                placeholder="Schrijf een bericht..."
+                                className="flex-1 p-3 bg-white border border-slate-300 rounded-lg text-sm focus:border-slate-400 focus:ring-0 resize-none placeholder:text-slate-400"
+                                rows={1}
+                                style={{
+                                  minHeight: "44px",
+                                  maxHeight: "120px",
+                                }}
+                              />
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={handleAttachmentButtonClick}
+                                  className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                >
+                                  <Paperclip className="size-5" />
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={!selectedClient || isCoachLoading}
+                                  className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium text-sm"
+                                >
+                                  Versturen
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              ref={attachmentInputRef}
+                              type="file"
+                              className="sr-only"
+                              onChange={handleAttachmentChange}
+                            />
+                          </form>
+                          {selectedClient && (
+                            <div className="border-t border-slate-200 p-4">
+                              <div className="mb-3 flex items-center justify-between">
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Documenten
+                                </p>
+                                {isDocUploading && (
+                                  <span className="text-xs text-slate-500">
+                                    Uploaden…
+                                  </span>
+                                )}
+                              </div>
+                              {documents.length === 0 ? (
+                                <p className="text-sm text-slate-500">
+                                  Nog geen bestanden.
+                                </p>
+                              ) : (
+                                <div className="max-h-40 space-y-2 overflow-y-auto">
+                                  {documents.map((doc) => (
+                                    <div
+                                      key={doc.id}
+                                      className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                                    >
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-sm font-medium text-slate-900">
+                                            {doc.originalName}
+                                          </p>
+                                          <p className="text-xs text-slate-500">
+                                            {(doc.size / 1024).toFixed(1)} KB
+                                          </p>
+                                        </div>
+                                        <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                                          {doc.kind === "AUDIO"
+                                            ? "Audio"
+                                            : "Tekst"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div
+                            ref={overseerMessagesRef}
+                            className="flex-1 overflow-y-auto p-6 space-y-3 bg-white"
+                          >
+                            {overseerThread.length === 0 ? (
+                              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+                                Vraag de overzichtscoach om trends of
+                                risico&#39;s.
+                              </div>
+                            ) : (
+                              overseerThread.map((message) => (
+                                <div
+                                  key={message.id}
+                                  className={`rounded-lg border px-3 py-2 text-sm ${
+                                    message.role === "assistant"
+                                      ? "border-purple-200 bg-white text-slate-900"
+                                      : "border-slate-200 bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs uppercase text-slate-500">
+                                    {message.role}
+                                  </p>
+                                  <p className="mt-1 whitespace-pre-wrap">
+                                    {message.content}
+                                  </p>
+                                  {isAdmin && message.role === "assistant" && (
+                                    <div className="mt-2 text-[11px] text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openFeedbackDialog(
+                                            "OVERSEER",
+                                            message
+                                          )
+                                        }
+                                        className="text-purple-600 underline-offset-2 hover:text-purple-500 hover:underline"
+                                      >
+                                        Geef feedback
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          <form
+                            onSubmit={handleOverseerSubmit}
+                            className="p-4 bg-white border-t border-slate-200"
+                          >
+                            <textarea
+                              value={overseerInput}
+                              onChange={(event) =>
+                                setOverseerInput(event.target.value)
+                              }
+                              placeholder="Vraag naar trends, risico&#39;s..."
+                              disabled={isOverseerLoading}
+                              className="w-full resize-none rounded-lg border border-slate-300 p-3 text-sm focus:border-purple-500 focus:ring-0 placeholder:text-slate-400"
+                              rows={2}
+                            />
+                            <button
+                              type="submit"
+                              disabled={
+                                !overseerInput.trim() || isOverseerLoading
+                              }
+                              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-40"
+                            >
+                              Verstuur
+                            </button>
+                          </form>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Insights and Documents Sidebar: Flat cards */}
+                    <div className="space-y-4">
+                      {/* Growth Checklist */}
+                      <div className="bg-white rounded-xl border border-slate-200 p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <CheckCircle2 className="size-5 text-slate-400" />
+                          <h3 className="text-base font-semibold text-slate-900">
+                            Sterktes & Aandachtspunten
+                          </h3>
+                        </div>
+                        <ul className="space-y-3">
+                          {strengthsAndWatchouts.map((item, idx) => (
+                            <li
+                              key={idx}
+                              className="flex gap-3 text-sm text-slate-700"
+                            >
+                              <div className="mt-1.5 size-1.5 rounded-full bg-slate-300 shrink-0" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+
+      <Dialog
+        open={feedbackDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeFeedbackDialog();
+          } else {
+            setFeedbackDialogOpen(true);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Geef feedback op AI-antwoord</DialogTitle>
+            <DialogDescription>
+              Beschrijf hoe de{" "}
+              {feedbackTarget?.agentType === "OVERSEER"
+                ? "overzichtscoach"
+                : "coach assistent"}{" "}
+              het antwoord kan verbeteren.
+            </DialogDescription>
+          </DialogHeader>
+          {feedbackTarget ? (
+            <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Originele reactie
+                </p>
+                <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 max-h-48 overflow-y-auto">
+                  <p className="whitespace-pre-wrap">
+                    {feedbackTarget.messageContent}
+                  </p>
+                </div>
+              </div>
+              <label className="flex flex-col gap-2 text-sm">
+                <span className="font-medium text-slate-900">
+                  Jouw feedback
+                </span>
+                <textarea
+                  value={feedbackText}
+                  onChange={(event) => setFeedbackText(event.target.value)}
+                  rows={4}
+                  placeholder="Beschrijf wat anders moet of wat ontbreekt..."
+                  className="w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-900 focus:outline-none"
+                  required
+                />
+              </label>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeFeedbackDialog}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  Annuleren
+                </button>
+                <button
+                  type="submit"
+                  disabled={isFeedbackSubmitting}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {isFeedbackSubmitting ? "Versturen..." : "Verstuur feedback"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Selecteer een AI-bericht om feedback te geven.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

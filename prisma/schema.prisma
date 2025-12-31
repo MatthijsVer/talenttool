@@ -96,6 +96,11 @@ enum DocumentKind {
   AUDIO
 }
 
+enum AgentKind {
+  COACH
+  OVERSEER
+}
+
 model CoachDirective {
   id         String   @id @default(cuid())
   client     Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -110,6 +115,21 @@ model SystemPrompt {
   content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model AgentFeedback {
+  id             String    @id @default(cuid())
+  agentType      AgentKind
+  messageId      String
+  messageContent String   @db.Text
+  feedback       String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  @@index([agentType])
 }
 
 model SystemSetting {
@@ -132,6 +152,7 @@ model User {
 
   sessions Session[]
   accounts Account[]
+  feedback AgentFeedback[]
 }
 
 model Session {

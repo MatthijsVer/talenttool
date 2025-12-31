@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { AgentKind, Prisma } from "@prisma/client";
 
 import { DEFAULT_COACH_MODEL, DEFAULT_OVERSEER_MODEL } from "@/lib/agents/models";
 import { prisma } from "@/lib/prisma";
@@ -12,6 +12,9 @@ export interface AgentMessage {
   content: string;
   createdAt: string;
   meta?: Record<string, unknown> | null;
+}
+export interface StoredAgentMessage extends AgentMessage {
+  clientId?: string;
 }
 
 export interface ClientProfile {
@@ -437,6 +440,19 @@ export interface SystemPromptRecord {
   updatedAt: string;
 }
 
+export interface AgentFeedbackRecord {
+  id: string;
+  agentType: AgentKind;
+  messageId: string;
+  messageContent: string;
+  feedback: string;
+  createdAt: string;
+  createdBy?: {
+    id: string;
+    name?: string | null;
+  } | null;
+}
+
 async function getPromptRecord(id: string): Promise<SystemPromptRecord | null> {
   const prompt = await prisma.systemPrompt.findUnique({
     where: { id },
@@ -479,6 +495,44 @@ export async function getOverseerPrompt(): Promise<SystemPromptRecord | null> {
 
 export async function updateOverseerPrompt(content: string): Promise<SystemPromptRecord> {
   return upsertPromptRecord(OVERSEER_PROMPT_ID, content);
+}
+
+export async function getAgentMessageById(
+  messageId: string,
+): Promise<StoredAgentMessage | null> {
+  const record = await prisma.agentMessage.findUnique({
+    where: { id: messageId },
+    include: {
+      session: {
+        select: {
+          clientId: true,
+        },
+      },
+    },
+  });
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...mapAgentMessage(record),
+    clientId: record.session?.clientId,
+  };
+}
+
+export async function getOverseerMessageById(
+  messageId: string,
+): Promise<StoredAgentMessage | null> {
+  const record = await prisma.overseerMessage.findUnique({
+    where: { id: messageId },
+  });
+
+  if (!record) {
+    return null;
+  }
+
+  return mapOverseerMessage(record);
 }
 
 function mapSettings(records: Array<{ id: string; value: string }>): Record<string, string> {
@@ -539,6 +593,85 @@ export async function updateAIModelSettings(input: {
   await Promise.all(tasks);
 
   return getAIModelSettings();
+}
+
+function mapAgentFeedback(record: {
+  id: string;
+  agentType: AgentKind;
+  messageId: string;
+  messageContent: string;
+  feedback: string;
+  createdAt: Date;
+  createdBy?: {
+    id: string;
+    name: string | null;
+  } | null;
+}): AgentFeedbackRecord {
+  return {
+    id: record.id,
+    agentType: record.agentType,
+    messageId: record.messageId,
+    messageContent: record.messageContent,
+    feedback: record.feedback,
+    createdAt: record.createdAt.toISOString(),
+    createdBy: record.createdBy
+      ? {
+          id: record.createdBy.id,
+          name: record.createdBy.name,
+        }
+      : null,
+  };
+}
+
+export async function createAgentFeedback(input: {
+  agentType: AgentKind;
+  messageId: string;
+  messageContent: string;
+  feedback: string;
+  createdById?: string;
+}): Promise<AgentFeedbackRecord> {
+  const record = await prisma.agentFeedback.create({
+    data: {
+      agentType: input.agentType,
+      messageId: input.messageId,
+      messageContent: input.messageContent,
+      feedback: input.feedback,
+      createdById: input.createdById,
+    },
+    include: {
+      createdBy: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return mapAgentFeedback(record);
+}
+
+export async function listAgentFeedback(
+  agentType?: AgentKind,
+  limit = 20,
+): Promise<AgentFeedbackRecord[]> {
+  const records = await prisma.agentFeedback.findMany({
+    where: agentType ? { agentType } : undefined,
+    include: {
+      createdBy: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    take: limit,
+  });
+
+  return records.map(mapAgentFeedback);
 }
 
 function mapDocument(document: {
