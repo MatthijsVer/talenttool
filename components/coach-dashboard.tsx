@@ -597,7 +597,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
   return (
     // Used a very flat light grey background for the app container
-    <div className="flex h-screen bg-slate-50 text-slate-900 max-h-screen overflow-hidden">
+    <div className="flex h-screen max-h-screen w-full bg-slate-50 text-slate-900 overflow-hidden">
       {/* Sidebar: Flat, bordered, minimal */}
       <aside className="w-72 shrink-0 border-r border-slate-200/60 bg-white/80 backdrop-blur flex flex-col">
         {/* Header */}
@@ -969,7 +969,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+      <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden bg-slate-50">
         {/* Top Header Bar: Flat, bordered */}
         <header className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
