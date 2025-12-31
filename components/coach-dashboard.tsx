@@ -129,6 +129,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     useState<SettingsTab>("profile");
   const editClientAvatarInputId = useId();
   const newClientAvatarInputId = useId();
+  const userAvatarInputId = useId();
   const isAdmin = currentUser.role === "ADMIN";
   const userInitial = currentUser.name?.charAt(0).toUpperCase() ?? "C";
   const settingsSections = useMemo<
@@ -1148,7 +1149,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     className="space-y-4"
                                   >
                                     <div className="flex items-center gap-3">
-                                      <div className="size-12 overflow-hidden rounded-full bg-slate-100">
+                                      <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
                                         {userAvatarFile ? (
                                           <>
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1157,35 +1158,60 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                                 userAvatarFile
                                               )}
                                               alt="Nieuwe avatar"
-                                              className="size-12 object-cover"
+                                              className="size-16 object-cover"
                                             />
                                           </>
                                         ) : currentUser.image ? (
                                           <Image
                                             src={currentUser.image}
                                             alt={currentUser.name}
-                                            width={48}
-                                            height={48}
-                                            className="size-12 object-cover"
+                                            width={64}
+                                            height={64}
+                                            className="size-16 object-cover"
                                             unoptimized
                                           />
+                                        ) : currentUser.name ? (
+                                          <span className="text-base font-semibold">
+                                            {getInitials(currentUser.name)}
+                                          </span>
                                         ) : (
-                                          <UserRound className="size-5 text-slate-400" />
+                                          <UserRound className="size-6 text-slate-400" />
                                         )}
                                       </div>
-                                      <label className="text-xs font-medium text-slate-600">
-                                        Profielfoto
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="mt-1 text-xs"
-                                          onChange={(event) =>
-                                            setUserAvatarFile(
-                                              event.target.files?.[0] ?? null
-                                            )
-                                          }
-                                        />
-                                      </label>
+                                      <div>
+                                        <p className="text-xs font-semibold text-slate-700">
+                                          Profielfoto
+                                        </p>
+                                        <div className="mt-1 flex items-center gap-2">
+                                          <input
+                                            id={userAvatarInputId}
+                                            type="file"
+                                            accept="image/*"
+                                            className="sr-only"
+                                            onChange={(event) =>
+                                              setUserAvatarFile(
+                                                event.target.files?.[0] ?? null
+                                              )
+                                            }
+                                          />
+                                          <label
+                                            htmlFor={userAvatarInputId}
+                                            className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                          >
+                                            Kies bestand
+                                          </label>
+                                          <span className="text-xs text-slate-500">
+                                            {userAvatarFile
+                                              ? userAvatarFile.name
+                                              : currentUser.image
+                                              ? "Huidige foto ingesteld"
+                                              : "Geen bestand geselecteerd"}
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 text-[11px] text-slate-500">
+                                          PNG of JPG, maximaal 5 MB.
+                                        </p>
+                                      </div>
                                     </div>
                                     <label className="flex flex-col gap-1 text-sm">
                                       Naam
