@@ -16,7 +16,19 @@ export async function PATCH(
   }
 
   const payload = await request.json().catch(() => null);
-  if (!payload) {
+  const clientId =
+    params?.clientId ?? (payload && typeof payload === "object"
+      ? ((payload as { clientId?: string }).clientId ?? null)
+      : null);
+
+  if (!clientId) {
+    return NextResponse.json(
+      { error: "Client ID ontbreekt" },
+      { status: 400 }
+    );
+  }
+
+  if (!payload || typeof payload !== "object") {
     return NextResponse.json({ error: "Ongeldig verzoek" }, { status: 400 });
   }
 
@@ -29,7 +41,7 @@ export async function PATCH(
   };
 
   if (avatarUrl) {
-    const client = await updateClientAvatar(params.clientId, avatarUrl);
+    const client = await updateClientAvatar(clientId, avatarUrl);
     return NextResponse.json({ client });
   }
 
@@ -40,7 +52,7 @@ export async function PATCH(
     );
   }
 
-  const updatedClient = await updateClientProfile(params.clientId, {
+  const updatedClient = await updateClientProfile(clientId, {
     name,
     focusArea,
     summary,

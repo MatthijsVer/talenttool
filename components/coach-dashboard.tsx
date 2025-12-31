@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Lightbulb,
   UserRound,
+  Plus,
 } from "lucide-react";
 import type { UserRole } from "@prisma/client";
 
@@ -49,6 +50,14 @@ type HistoryState = Record<string, AgentMessage[]>;
 type DocumentState = Record<string, ClientDocument[]>;
 type SettingsTab = "profile" | "prompts";
 
+function getInitials(name?: string | null) {
+  if (!name) return "";
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.charAt(0) ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) ?? "" : "";
+  return (first + last).toUpperCase();
+}
+
 const toolLinks: Array<{ label: string; icon: LucideIcon }> = [
   { label: "Instellingen", icon: Settings },
 ];
@@ -68,6 +77,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isDocUploading, setDocUploading] = useState(false);
   const [activeChannel, setActiveChannel] = useState<"coach" | "meta">("coach");
   const [isClientDialogOpen, setClientDialogOpen] = useState(false);
+  const [isCreateClientDialogOpen, setCreateClientDialogOpen] = useState(false);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [clientForm, setClientForm] = useState({
     name: "",
     focusArea: "",
@@ -75,7 +86,16 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     goals: "",
     avatarUrl: "",
   });
+  const [newClientForm, setNewClientForm] = useState({
+    name: "",
+    focusArea: "",
+    summary: "",
+    goals: "",
+  });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [newClientAvatarFile, setNewClientAvatarFile] = useState<File | null>(
+    null
+  );
   const [userForm, setUserForm] = useState({
     name: currentUser.name,
     image: currentUser.image ?? "",
@@ -83,6 +103,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [userAvatarFile, setUserAvatarFile] = useState<File | null>(null);
   const [isUserSaving, setUserSaving] = useState(false);
   const [isClientSaving, setClientSaving] = useState(false);
+  const [isCreatingClient, setCreatingClient] = useState(false);
   const [coachPrompt, setCoachPrompt] = useState("");
   const [coachPromptUpdatedAt, setCoachPromptUpdatedAt] = useState<
     string | null
@@ -99,6 +120,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isSigningOut, setSigningOut] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] =
     useState<SettingsTab>("profile");
+  const editClientAvatarInputId = useId();
+  const newClientAvatarInputId = useId();
   const isAdmin = currentUser.role === "ADMIN";
   const userInitial = currentUser.name?.charAt(0).toUpperCase() ?? "C";
   const settingsSections = useMemo<
@@ -138,6 +161,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     () => clients.find((client) => client.id === selectedClientId),
     [clients, selectedClientId]
   );
+  const selectedClientInitials = getInitials(selectedClient?.name);
+  const newClientInitials = getInitials(newClientForm.name);
 
   useEffect(() => {
     if (!selectedClientId) return;
@@ -284,6 +309,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         [selectedClientId]: data.history ?? [],
       }));
       setCoachInput("");
+      scrollToBottom(coachMessagesRef);
     } catch (sendError) {
       console.error(sendError);
       setError(
@@ -378,6 +404,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       const data = await response.json();
       setOverseerThread(data.thread ?? []);
       setOverseerInput("");
+      scrollToBottom(overseerMessagesRef);
     } catch (sendError) {
       console.error(sendError);
       setError(
@@ -457,17 +484,19 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
   async function handleClientSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedClientId) {
+    const clientId = editingClientId ?? selectedClientId;
+    if (!clientId) {
       return;
     }
 
     setClientSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/clients/${selectedClientId}`, {
+      const response = await fetch(`/api/clients/${clientId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          clientId,
           name: clientForm.name,
           focusArea: clientForm.focusArea,
           summary: clientForm.summary,
@@ -494,10 +523,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         if (!uploadResponse.ok || !uploadData.url) {
           throw new Error(uploadData.error ?? "Avatar uploaden is mislukt.");
         }
-        await fetch(`/api/clients/${selectedClientId}`, {
+        await fetch(`/api/clients/${clientId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            clientId,
             avatarUrl: uploadData.url,
           }),
         });
@@ -506,6 +536,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       router.refresh();
       setClientDialogOpen(false);
       setAvatarFile(null);
+      setEditingClientId(null);
     } catch (updateError) {
       console.error(updateError);
       setError(
@@ -513,6 +544,76 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       );
     } finally {
       setClientSaving(false);
+    }
+  }
+
+  async function handleNewClientSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    if (!newClientForm.name.trim()) {
+      setError("Naam is verplicht.");
+      return;
+    }
+
+    setCreatingClient(true);
+    setError(null);
+    try {
+      let avatarUrl: string | undefined;
+      if (newClientAvatarFile) {
+        const avatarForm = new FormData();
+        avatarForm.append("file", newClientAvatarFile);
+        const uploadResponse = await fetch(`/api/uploads/avatar`, {
+          method: "POST",
+          body: avatarForm,
+        });
+        const uploadData = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadData.url) {
+          throw new Error(uploadData.error ?? "Avatar uploaden is mislukt.");
+        }
+        avatarUrl = uploadData.url as string;
+      }
+
+      const response = await fetch(`/api/clients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newClientForm.name,
+          focusArea: newClientForm.focusArea,
+          summary: newClientForm.summary,
+          goals: newClientForm.goals
+            .split(",")
+            .map((goal) => goal.trim())
+            .filter((goal) => goal.length > 0),
+          ...(avatarUrl ? { avatarUrl } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? "Cliënt aanmaken is mislukt.");
+      }
+
+      router.refresh();
+      if (data.client?.id) {
+        setSelectedClientId(data.client.id);
+      }
+      setCreateClientDialogOpen(false);
+      setNewClientForm({
+        name: "",
+        focusArea: "",
+        summary: "",
+        goals: "",
+      });
+      setNewClientAvatarFile(null);
+    } catch (newClientError) {
+      console.error(newClientError);
+      setError(
+        newClientError instanceof Error
+          ? newClientError.message
+          : "Cliënt aanmaken is mislukt."
+      );
+    } finally {
+      setCreatingClient(false);
     }
   }
 
@@ -595,6 +696,30 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     ];
   }, [selectedClient]);
 
+  const coachMessagesRef = useRef<HTMLDivElement | null>(null);
+  const overseerMessagesRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottom = useCallback((ref: React.RefObject<HTMLDivElement>) => {
+    if (ref.current) {
+      ref.current.scrollTo({
+        top: ref.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeChannel === "coach") {
+      scrollToBottom(coachMessagesRef);
+    }
+  }, [messages, activeChannel, scrollToBottom]);
+
+  useEffect(() => {
+    if (activeChannel === "meta") {
+      scrollToBottom(overseerMessagesRef);
+    }
+  }, [overseerThread, activeChannel, scrollToBottom]);
+
   return (
     // Used a very flat light grey background for the app container
     <div className="flex h-screen max-h-screen w-full bg-slate-50 text-slate-900 overflow-hidden">
@@ -635,9 +760,171 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
           {/* Clients */}
           <div>
-            <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Cliënten
-            </p>
+            <div className="mb-2 flex items-center justify-between px-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Cliënten
+              </p>
+              {isAdmin && (
+                <Dialog
+                  open={isCreateClientDialogOpen}
+                  onOpenChange={(open) => {
+                    setCreateClientDialogOpen(open);
+                    if (!open) {
+                      setNewClientForm({
+                        name: "",
+                        focusArea: "",
+                        summary: "",
+                        goals: "",
+                      });
+                      setNewClientAvatarFile(null);
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-100/70">
+                      <Plus className="size-3.5" />
+                      Nieuw
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-xl space-y-4">
+                    <DialogHeader>
+                      <DialogTitle>Nieuwe cliënt</DialogTitle>
+                      <DialogDescription>
+                        Voeg een nieuwe coachee toe aan het systeem.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form className="space-y-4" onSubmit={handleNewClientSubmit}>
+                      <div className="flex items-center gap-3">
+                        <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 overflow-hidden flex items-center justify-center">
+                          {newClientAvatarFile ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={URL.createObjectURL(newClientAvatarFile)}
+                                alt="Voorbeeld avatar"
+                                className="size-16 object-cover"
+                              />
+                            </>
+                          ) : newClientInitials ? (
+                            <span className="text-base font-semibold">
+                              {newClientInitials}
+                            </span>
+                          ) : (
+                            <UserRound className="size-6 text-slate-400" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">
+                            Profielfoto
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              id={newClientAvatarInputId}
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(event) =>
+                                setNewClientAvatarFile(
+                                  event.target.files?.[0] ?? null
+                                )
+                              }
+                            />
+                            <label
+                              htmlFor={newClientAvatarInputId}
+                              className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Kies bestand
+                            </label>
+                            <span className="text-xs text-slate-500">
+                              {newClientAvatarFile
+                                ? newClientAvatarFile.name
+                                : "Geen bestand geselecteerd"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            PNG of JPG, maximaal 5 MB.
+                          </p>
+                        </div>
+                      </div>
+                      <label className="flex flex-col gap-1 text-sm">
+                        Naam
+                        <input
+                          type="text"
+                          value={newClientForm.name}
+                          onChange={(event) =>
+                            setNewClientForm((form) => ({
+                              ...form,
+                              name: event.target.value,
+                            }))
+                          }
+                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                          required
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm">
+                        Focusgebied
+                        <input
+                          type="text"
+                          value={newClientForm.focusArea}
+                          onChange={(event) =>
+                            setNewClientForm((form) => ({
+                              ...form,
+                              focusArea: event.target.value,
+                            }))
+                          }
+                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm">
+                        Samenvatting
+                        <textarea
+                          value={newClientForm.summary}
+                          onChange={(event) =>
+                            setNewClientForm((form) => ({
+                              ...form,
+                              summary: event.target.value,
+                            }))
+                          }
+                          rows={4}
+                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm">
+                        Doelen (gescheiden door komma)
+                        <textarea
+                          value={newClientForm.goals}
+                          onChange={(event) =>
+                            setNewClientForm((form) => ({
+                              ...form,
+                              goals: event.target.value,
+                            }))
+                          }
+                          rows={3}
+                          className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                          placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
+                        />
+                      </label>
+                      <div className="flex justify-end gap-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setCreateClientDialogOpen(false)}
+                          className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
+                        >
+                          Annuleren
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isCreatingClient}
+                          className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                        >
+                          {isCreatingClient ? "Opslaan..." : "Opslaan"}
+                        </button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
 
             <ul className="space-y-1">
               {clients.map((client) => {
@@ -849,7 +1136,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                           onChange={(event) =>
                                             setCoachPrompt(event.target.value)
                                           }
-                                          className="min-h-[100px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
+                                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
                                         />
                                         <div className="flex items-center justify-between text-xs text-slate-500">
                                           <p>
@@ -897,7 +1184,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                               event.target.value
                                             )
                                           }
-                                          className="min-h-[100px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
+                                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:ring-0 outline-none"
                                         />
                                         <div className="flex items-center justify-between text-xs text-slate-500">
                                           <p>
@@ -995,6 +1282,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       summary: selectedClient.summary,
                       goals: selectedClient.goals.join(", "),
                     });
+                    setEditingClientId(selectedClient.id);
+                  } else {
+                    setEditingClientId(null);
+                    setAvatarFile(null);
                   }
                 }}
               >
@@ -1012,31 +1303,68 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       Pas de basisinformatie en doelen van de cliënt aan.
                     </DialogDescription>
                   </DialogHeader>
-                  <form className="space-y-4" onSubmit={handleClientSave}>
-                    <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={
-                          avatarFile
-                            ? URL.createObjectURL(avatarFile)
-                            : selectedClient.avatarUrl ||
-                              "/placeholders/avatar.png"
-                        }
-                        alt={selectedClient.name}
-                        className="size-16 rounded-full border border-slate-200 object-cover"
-                      />
-                      <label className="text-xs font-medium text-slate-600">
-                        Profielfoto
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(event) =>
-                            setAvatarFile(event.target.files?.[0] ?? null)
-                          }
-                          className="mt-1 text-xs"
-                        />
-                      </label>
-                    </div>
+                    <form className="space-y-4" onSubmit={handleClientSave}>
+                      <div className="flex items-center gap-3">
+                        <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
+                          {avatarFile ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={URL.createObjectURL(avatarFile)}
+                                alt="Voorbeeld avatar"
+                                className="size-16 object-cover"
+                              />
+                            </>
+                          ) : selectedClient.avatarUrl ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={selectedClient.avatarUrl}
+                                alt={selectedClient.name}
+                                className="size-16 object-cover"
+                              />
+                            </>
+                          ) : selectedClientInitials ? (
+                            <span className="text-base font-semibold">
+                              {selectedClientInitials}
+                            </span>
+                          ) : (
+                            <UserRound className="size-6 text-slate-400" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">
+                            Profielfoto
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              id={editClientAvatarInputId}
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(event) =>
+                                setAvatarFile(event.target.files?.[0] ?? null)
+                              }
+                            />
+                            <label
+                              htmlFor={editClientAvatarInputId}
+                              className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Kies bestand
+                            </label>
+                            <span className="text-xs text-slate-500">
+                              {avatarFile
+                                ? avatarFile.name
+                                : selectedClient.avatarUrl
+                                ? "Huidige foto ingesteld"
+                                : "Geen bestand geselecteerd"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            PNG of JPG, maximaal 5 MB.
+                          </p>
+                        </div>
+                      </div>
                     <label className="flex flex-col gap-1 text-sm">
                       Naam
                       <input
@@ -1217,7 +1545,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
             {/* Bottom Row: Chat Area and Insights Sidebar */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
               {/* Main Chat Interface */}
-              <div className="lg:col-span-2 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden h-[600px]">
+              <div className="lg:col-span-2 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden h-[800px]">
                 <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-4 bg-white">
                   <button
                     onClick={() => setActiveChannel("coach")}
@@ -1244,7 +1572,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
                 {activeChannel === "coach" ? (
                   <>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white">
+                    <div
+                      ref={coachMessagesRef}
+                      className="flex-1 overflow-y-auto p-6 space-y-6 bg-white"
+                    >
                       {messages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
                           <MessageSquare className="size-6 mb-2 opacity-50" />
@@ -1362,7 +1693,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   </>
                 ) : (
                   <>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-white">
+                    <div
+                      ref={overseerMessagesRef}
+                      className="flex-1 overflow-y-auto p-6 space-y-3 bg-white"
+                    >
                       {overseerThread.length === 0 ? (
                         <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
                           Vraag de overzichtscoach om trends of risico&#39;s.

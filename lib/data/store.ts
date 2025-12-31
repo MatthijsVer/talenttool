@@ -146,6 +146,40 @@ export async function updateClientProfile(
   };
 }
 
+export async function createClient(data: {
+  name: string;
+  focusArea?: string;
+  summary?: string;
+  goals?: string[];
+  avatarUrl?: string | null;
+}): Promise<ClientProfile> {
+  const client = await prisma.client.create({
+    data: {
+      name: data.name.trim(),
+      focusArea: data.focusArea?.trim() ?? "",
+      summary: data.summary?.trim() ?? "",
+      avatarUrl: data.avatarUrl ?? null,
+      goals: data.goals?.length
+        ? {
+            create: data.goals
+              .filter((goal) => goal.trim().length > 0)
+              .map((goal) => ({ value: goal.trim() })),
+          }
+        : undefined,
+    },
+    include: { goals: true },
+  });
+
+  return {
+    id: client.id,
+    name: client.name,
+    focusArea: client.focusArea,
+    summary: client.summary,
+    goals: client.goals.map((goal) => goal.value),
+    avatarUrl: client.avatarUrl,
+  };
+}
+
 export async function updateClientAvatar(
   clientId: string,
   avatarUrl: string

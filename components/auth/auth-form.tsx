@@ -62,9 +62,7 @@ export function AuthForm() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-100 px-4 py-12">
       <div className="w-full max-w-md space-y-6 rounded-3xl bg-white p-8 shadow-lg">
         <div className="text-center">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-            Interly Talenttool
-          </p>
+          <p className="text-xs uppercase text-slate-400">Talenttool</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900">
             {isSignUp ? "Maak een account" : "Log in"}
           </h1>
@@ -143,8 +141,8 @@ export function AuthForm() {
             {isSubmitting
               ? "Even geduld..."
               : isSignUp
-                ? "Account aanmaken"
-                : "Inloggen"}
+              ? "Account aanmaken"
+              : "Inloggen"}
           </button>
         </form>
 
