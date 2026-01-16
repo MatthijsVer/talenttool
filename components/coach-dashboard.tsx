@@ -1008,10 +1008,15 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
   return (
     <>
+      <img
+        alt="background"
+        src="/talenttool-bg.png"
+        className="absolute top-0 left-0 w-screen h-screen -z-1"
+      />
       {/* Used a very flat light grey background for the app container */}
-      <div className="flex h-screen max-h-screen w-full bg-slate-50 text-slate-900 overflow-hidden">
+      <div className="flex h-screen max-h-screen w-full  text-slate-900 overflow-hidden">
         {/* Sidebar: Flat, bordered, minimal */}
-        <aside className="w-72 shrink-0 border-r border-slate-200/60 bg-white/80 backdrop-blur flex flex-col">
+        <aside className="w-72 shrink-0 border-r border-slate-200/60 bg-white/60 backdrop-blur flex flex-col">
           {/* Header */}
           <div className="">
             <div className="flex items-center gap-3 px-4 pt-4 pb-2">
@@ -1497,7 +1502,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden bg-slate-50">
+        <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden">
           {activeSidebarTab === "prompt-center" ? (
             <div className="flex h-full flex-col">
               <header className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
@@ -1614,7 +1619,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
                       >
                         <div className="flex flex-col gap-1">
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start justify-between gap-10">
                             <div>
                               <p className="text-sm font-semibold text-slate-900">
                                 Coachprompt
@@ -2012,97 +2017,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
               {/* Scrollable Dashboard Grid */}
               <div className="flex-1 overflow-y-auto p-6">
-                <div className="max-w-8xl mx-auto space-y-4 pb-4">
-                  {/* Context Cards: Flat, white background, thin grey border */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {/* Profile Card */}
-                    <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="size-12 rounded-xl bg-slate-100 flex items-center justify-center">
-                            {selectedClient?.avatarUrl ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={selectedClient.avatarUrl}
-                                  alt={selectedClient.name}
-                                  className="size-12 rounded-xl object-cover"
-                                />
-                              </>
-                            ) : (
-                              <UserRound className="size-5 text-slate-400" />
-                            )}
-                          </div>
-                          <div>
-                            <h3 className="text-base font-semibold text-slate-900">
-                              Profiel Samenvatting
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                              {selectedClient?.focusArea || "Geen focusgebied"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-sm text-slate-600 leading-relaxed">
-                        {selectedClient?.summary || "Selecteer een cliënt."}
-                      </p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {selectedClient?.focusArea.split(",").map((tag) => (
-                          <span
-                            key={tag}
-                            className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium border border-slate-200 capitalize"
-                          >
-                            {tag.trim()}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Goals Card - Flat white instead of colored block */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-base font-semibold text-slate-900">
-                          Doelen
-                        </h3>
-                        <Target className="size-5 text-slate-400" />
-                      </div>
-                      <ul className="space-y-3">
-                        {selectedClient?.goals.length ? (
-                          selectedClient.goals.map((goal, i) => (
-                            <li
-                              key={i}
-                              className="text-sm flex gap-3 items-start text-slate-700"
-                            >
-                              <span className="font-medium text-slate-400">
-                                {i + 1}.
-                              </span>
-                              <span className="leading-tight">{goal}</span>
-                            </li>
-                          ))
-                        ) : (
-                          <p className="text-sm text-slate-500 italic">
-                            Geen doelen ingesteld.
-                          </p>
-                        )}
-                      </ul>
-                    </div>
-
-                    {/* AI Insights Panel - Removed amber styling, kept it flat white */}
-                    <div className="bg-white col-span-3 rounded-xl border border-slate-200 p-6">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Lightbulb className="size-5 text-slate-400" />
-                        <h3 className="text-base font-semibold text-slate-900">
-                          Laatste Inzicht
-                        </h3>
-                      </div>
-                      <p className="text-sm text-slate-600 italic leading-relaxed">
-                        {latestCoachFeedback}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Bottom Row: Chat Area and Insights Sidebar */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                <div className="max-w-8xl flex items-start gap-4 mx-auto space-y-4 pb-4">
+                  <div className="grid grid-cols-1 gap-4 items-start">
                     {/* Main Chat Interface */}
                     <div className="lg:col-span-2 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden h-[800px]">
                       <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-4 bg-white">
@@ -2352,11 +2268,84 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         </>
                       )}
                     </div>
+                  </div>
+                  <div className=" gap-4 min-w-90 flex flex-col">
+                    {/* Profile Card */}
+                    <div className="lg:col-span-2 bg-white/70 backdrop-blur-2xl rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="size-12 rounded-xl bg-white flex items-center justify-center">
+                            {selectedClient?.avatarUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={selectedClient.avatarUrl}
+                                  alt={selectedClient.name}
+                                  className="size-12 rounded-xl object-cover"
+                                />
+                              </>
+                            ) : (
+                              <UserRound className="size-5 text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-semibold text-slate-900">
+                              Profiel Samenvatting
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                              {selectedClient?.focusArea || "Geen focusgebied"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        {selectedClient?.summary || "Selecteer een cliënt."}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {selectedClient?.focusArea.split(",").map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium border border-slate-200 capitalize"
+                          >
+                            {tag.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Goals Card - Flat white instead of colored block */}
+                    <div className="lg:col-span-2 bg-white/70 backdrop-blur-2xl rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-semibold text-slate-900">
+                          Doelen
+                        </h3>
+                        <Target className="size-5 text-slate-400" />
+                      </div>
+                      <ul className="space-y-3">
+                        {selectedClient?.goals.length ? (
+                          selectedClient.goals.map((goal, i) => (
+                            <li
+                              key={i}
+                              className="text-sm flex gap-3 items-start text-slate-700"
+                            >
+                              <span className="font-medium text-slate-400">
+                                {i + 1}.
+                              </span>
+                              <span className="leading-tight">{goal}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">
+                            Geen doelen ingesteld.
+                          </p>
+                        )}
+                      </ul>
+                    </div>
 
                     {/* Insights and Documents Sidebar: Flat cards */}
                     <div className="space-y-4">
                       {/* Growth Checklist */}
-                      <div className="bg-white rounded-xl border border-slate-200 p-6">
+                      <div className="lg:col-span-2 bg-white/70 backdrop-blur-2xl rounded-xl p-4">
                         <div className="flex items-center gap-2 mb-4">
                           <CheckCircle2 className="size-5 text-slate-400" />
                           <h3 className="text-base font-semibold text-slate-900">
