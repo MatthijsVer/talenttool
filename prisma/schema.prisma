@@ -26,6 +26,7 @@ model Client {
   goals     ClientGoal[]
   documents ClientDocument[]
   directives CoachDirective[]
+  reports   ClientReport[]
 }
 
 model ClientGoal {
@@ -108,6 +109,16 @@ model CoachDirective {
   summary    String   @db.Text
   createdAt  DateTime @default(now())
   createdBy  MessageSource @default(AI)
+}
+
+model ClientReport {
+  id        String   @id @default(cuid())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
 }
 
 model SystemPrompt {

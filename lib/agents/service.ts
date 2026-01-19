@@ -11,6 +11,7 @@ import {
   getSessionWindow,
   listClientDigests,
   recordOverseerMessage,
+  saveClientReport,
   type AgentRole,
   type ClientProfile,
 } from "@/lib/data/store";
@@ -32,6 +33,8 @@ export interface AgentReply {
     inputTokens?: number;
     outputTokens?: number;
   };
+  reportId?: string;
+  createdAt?: string;
 }
 
 export async function runCoachAgent(
@@ -119,6 +122,58 @@ export async function runOverseerAgent(userMessage: string): Promise<AgentReply>
     reply: completion.outputText,
     responseId: completion.responseId,
     usage: completion.usage,
+  };
+}
+
+export async function generateClientReport(clientId: string): Promise<AgentReply> {
+  const client = await getClient(clientId);
+  if (!client) {
+    throw new Error(`Cliënt ${clientId} niet gevonden.`);
+  }
+
+  const history = (await getSessionWindow(clientId, 80)) ?? [];
+  const documentSnippets = await getDocumentSnippets(clientId);
+  const { coachModel } = await getAIModelSettings();
+
+  const goals = client.goals.length ? client.goals.join(", ") : "Geen doelen vastgelegd";
+  const docSummary = documentSnippets.length
+    ? `Samenvatting documenten:\n${documentSnippets.join("\n\n")}`
+    : "";
+
+  const systemPrompt = [
+    "Je bent een executive coach die heldere rapportages opstelt.",
+    `Cliënt: ${client.name}. Focus: ${client.focusArea}. Doelen: ${goals}.`,
+    docSummary,
+    "Schrijf een kort rapport (max 180 woorden) in het Nederlands met de onderdelen: Overzicht, Voortgang en Aanbevolen volgende stap. Gebruik gewone zinnen zonder markdown of opsommingen en spreek de coach aan in de jij-vorm.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const conversation = history
+    .map((message) => formatMessageForAgent(message))
+    .join("\n\n");
+
+  const completion = await runAgentCompletion({
+    model: coachModel,
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content:
+          conversation ||
+          "Er zijn nog geen gesprekken gevoerd. Maak een kort rapport met een vriendelijke introductie en herinnering om doelen te stellen.",
+      },
+    ],
+  });
+
+  const savedReport = await saveClientReport(clientId, completion.outputText);
+
+  return {
+    reply: savedReport.content,
+    responseId: completion.responseId,
+    usage: completion.usage,
+    reportId: savedReport.id,
+    createdAt: savedReport.createdAt,
   };
 }
 

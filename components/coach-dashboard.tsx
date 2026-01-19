@@ -85,6 +85,15 @@ function getInitials(name?: string | null) {
   return (first + last).toUpperCase();
 }
 
+function cleanMessageContent(content: string) {
+  return content
+    .replace(/\[AI-[^\]]*\]\s*/gi, "")
+    .replace(/^#+\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^\s*[-*]\s*/gm, "• ")
+    .trim();
+}
+
 const toolLinks: Array<{ label: string; icon: LucideIcon }> = [
   { label: "Instellingen", icon: Settings },
 ];
@@ -104,6 +113,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isCoachLoading, setCoachLoading] = useState(false);
   const [isOverseerLoading, setOverseerLoading] = useState(false);
   const [isDocUploading, setDocUploading] = useState(false);
+  const [clientReport, setClientReport] = useState<{
+    content: string;
+    createdAt: string | null;
+    id?: string;
+  } | null>(null);
+  const [isReportGenerating, setReportGenerating] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [activeChannel, setActiveChannel] = useState<"coach" | "meta">("coach");
   const [isClientDialogOpen, setClientDialogOpen] = useState(false);
   const [isCreateClientDialogOpen, setCreateClientDialogOpen] = useState(false);
@@ -220,7 +236,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     if (!clientDocuments[selectedClientId]) {
       void fetchClientDocuments(selectedClientId);
     }
+    void fetchLatestReport(selectedClientId);
   }, [selectedClientId, clientHistories, clientDocuments]);
+
+  useEffect(() => {
+    setClientReport(null);
+    setReportError(null);
+  }, [selectedClientId]);
 
   useEffect(() => {
     if (!selectedClient || isClientDialogOpen) {
@@ -284,6 +306,29 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     } catch (fetchError) {
       console.error(fetchError);
       setError((fetchError as Error).message ?? "Documenten laden is mislukt.");
+    }
+  }
+
+  async function fetchLatestReport(clientId: string) {
+    try {
+      const response = await fetch(`/api/clients/${clientId}/report?limit=1`);
+      if (!response.ok) {
+        throw new Error("Kan rapport niet ophalen.");
+      }
+      const data = await response.json();
+      const latest = Array.isArray(data.reports) ? data.reports[0] : null;
+      if (latest && typeof latest.content === "string") {
+        setClientReport({
+          content: latest.content,
+          createdAt:
+            typeof latest.createdAt === "string" ? latest.createdAt : null,
+          id: latest.id,
+        });
+      } else {
+        setClientReport(null);
+      }
+    } catch (fetchError) {
+      console.error(fetchError);
     }
   }
 
@@ -624,6 +669,60 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     void uploadClientDocument(file);
     event.target.value = "";
   };
+
+  async function handleGenerateReport() {
+    if (!selectedClientId || isReportGenerating) {
+      return;
+    }
+    setReportGenerating(true);
+    setReportError(null);
+    try {
+      const response = await fetch(`/api/clients/${selectedClientId}/report`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? "Rapport genereren is mislukt.");
+      }
+      setClientReport({
+        content: typeof data.report === "string" ? data.report : "",
+        createdAt:
+          typeof data.createdAt === "string"
+            ? data.createdAt
+            : new Date().toISOString(),
+        id: typeof data.reportId === "string" ? data.reportId : undefined,
+      });
+    } catch (generateError) {
+      setReportError(
+        generateError instanceof Error
+          ? generateError.message
+          : "Rapport genereren is mislukt."
+      );
+    } finally {
+      setReportGenerating(false);
+    }
+  }
+
+  function handleDownloadReport() {
+    if (!clientReport?.content) return;
+    const blob = new Blob([clientReport.content], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const timestamp = clientReport.createdAt
+      ? new Date(clientReport.createdAt)
+      : new Date();
+    const filename = `${selectedClient?.name ?? "rapport"}-${timestamp
+      .toISOString()
+      .slice(0, 10)}.txt`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -1021,13 +1120,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     <>
       <img
         alt="background"
-        src="/talenttool-bg.png"
+        src="/talenttool-bg-large.png"
         className="absolute top-0 left-0 w-screen h-screen -z-1"
       />
       {/* Used a very flat light grey background for the app container */}
       <div className="relative flex  h-screen max-h-screen w-full overflow-hidden text-slate-900">
         {/* Sidebar: Flat, bordered, minimal */}
-        <aside className="w-72 shrink-0 py-8 flex flex-col">
+        <aside className="w-72 shrink-0 pt-7 px-1.5 flex flex-col">
           {/* Header */}
           <div className="">
             <div className="flex items-center gap-3 px-3">
@@ -1060,7 +1159,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
           </div>
 
           {/* Nav */}
-          <nav className="flex-1 overflow-y-auto pl-2 pr-3 py-4 space-y-4">
+          <nav className="flex-1 overflow-y-auto pl-2 pr-1 py-4 space-y-4">
             {/* Clients */}
             <div>
               <div className="mb-2 flex items-center justify-between pl-2">
@@ -1084,7 +1183,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                     }}
                   >
                     <DialogTrigger asChild>
-                      <button className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-100/70">
+                      <button className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-100/70">
                         <Plus className="size-3.5" />
                         Nieuw
                       </button>
@@ -1244,10 +1343,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                           setActiveSidebarTab("dashboard");
                         }}
                         className={[
-                          "group w-full flex items-center gap-3 rounded-lg px-2 py-2 text-left transition",
-                          "hover:bg-slate-100/70",
+                          "group w-full flex items-center gap-3 border border-transparent rounded-lg px-2 py-2 text-left transition",
+                          "hover:bg-white/40 hover:border-white/40",
                           isActive
-                            ? "bg-white/80 text-[#242424]"
+                            ? "bg-white/40 border-white/50 text-[#242424]"
                             : "text-[#242424]",
                         ].join(" ")}
                       >
@@ -1278,7 +1377,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
             {/* Tools */}
             <div>
-              <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground">
                 Tools
               </p>
 
@@ -1291,11 +1390,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
                         activeSidebarTab === "prompt-center"
-                          ? "bg-amber-50 text-amber-900 border border-amber-200"
+                          ? ""
                           : "text-slate-700 hover:bg-slate-100/70",
                       ].join(" ")}
                     >
-                      <Sparkles className="size-4 text-amber-500" />
+                      <Sparkles className="size-4 text-blue-300" />
                       AI Promptcenter
                     </button>
                   </li>
@@ -1817,41 +1916,32 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
           ) : (
             <>
               <div className="relative flex-1 min-h-0 overflow-hidden p-2">
-                <div className="flex h-full min-h-0 gap-4 rounded-[36px] backdrop-blur-3xl bg-white/30 border border-white/30 p-4 text-sm text-slate-800">
-                  {" "}
-                  <section className="flex flex-1 min-h-0 flex-col rounded-2xl">
-                    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
-                          Coach canvas
-                        </p>
-                        <h2 className="text-lg font-semibold text-slate-900">
-                          {selectedClient?.name ?? "Selecteer een cliënt"}
-                        </h2>
-                      </div>
-                      <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-medium text-slate-600">
-                        <button
-                          onClick={() => setActiveChannel("coach")}
-                          className={`rounded-full px-4 py-1 transition ${
-                            activeChannel === "coach"
-                              ? "bg-white text-slate-900 shadow"
-                              : "hover:text-slate-900"
-                          }`}
-                        >
-                          Coach assistent
-                        </button>
-                        <button
-                          onClick={() => setActiveChannel("meta")}
-                          className={`rounded-full px-4 py-1 transition ${
-                            activeChannel === "meta"
-                              ? "bg-white text-slate-900 shadow"
-                              : "hover:text-slate-900"
-                          }`}
-                        >
-                          Meta twin
-                        </button>
-                      </div>
-                    </div>
+                <div
+                  className="
+    relative flex h-full min-h-0 gap-4
+    rounded-[36px]
+    overflow-hidden
+
+    bg-white/18
+    backdrop-blur-2xl backdrop-saturate-120
+
+    p-4
+    pt-0
+    text-sm text-slate-800
+
+  "
+                >
+                  {/* Border */}
+                  <div className="pointer-events-none absolute inset-0 rounded-[36px] border border-white z-10" />
+
+                  {/* Top highlight */}
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-[36px]
+  bg-gradient-to-b from-white/45 via-white/18 to-transparent z-10"
+                  />
+
+                  {/* Actual content */}
+                  <section className="flex flex-1 relative z-20  min-h-0 flex-col rounded-2xl">
                     <div className="flex min-h-0 flex-1 flex-col">
                       {activeChannel === "coach" ? (
                         <>
@@ -1877,14 +1967,14 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     }`}
                                   >
                                     <div
-                                      className={`max-w-[75%] rounded-3xl p-3 leading-relaxed ${
+                                      className={`max-w-[75%] rounded-3xl leading-relaxed ${
                                         isAi
-                                          ? "shadow-sm bg-white text-slate-900"
-                                          : "bg-[#222222] text-white"
+                                          ? " bg-white p-5 text-slate-900"
+                                          : "bg-[#222222] p-3 text-white"
                                       }`}
                                     >
                                       <p className="whitespace-pre-wrap">
-                                        {message.content}
+                                        {cleanMessageContent(message.content)}
                                       </p>
                                       {isAdmin &&
                                         message.role === "assistant" &&
@@ -1915,14 +2005,14 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                             onSubmit={handleCoachSubmit}
                             className="px-4 pb-4"
                           >
-                            <div className="rounded-3xl relative bg-[#F1F1F1]">
+                            <div className="rounded-3xl relative bg-[#FFFF] border">
                               <textarea
                                 value={coachInput}
                                 onChange={(event) =>
                                   setCoachInput(event.target.value)
                                 }
                                 placeholder="Schrijf een bericht..."
-                                className="h-24 w-full resize-none rounded-lg border border-transparent p-3 text-sm text-slate-900 focus:border-slate-300 focus:outline-none"
+                                className="h-30 w-full resize-none rounded-lg border border-transparent p-3 text-sm text-slate-900 focus:outline-none"
                                 rows={3}
                               />
                               <div className="mt-2 flex items-center justify-between text-xs">
@@ -1975,7 +2065,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     {message.role}
                                   </p>
                                   <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
-                                    {message.content}
+                                    {cleanMessageContent(message.content)}
                                   </p>
                                   {isAdmin && message.role === "assistant" && (
                                     <div className="mt-1 text-right text-[10px]">
@@ -2029,8 +2119,30 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       )}
                     </div>
                   </section>
-                  <aside className="min-h-0 w-full shrink-0 text-sm text-slate-700 lg:w-84">
-                    <div className="space-y-4 overflow-y-auto">
+                  <aside className="min-h-0 relative z-20 w-full shrink-0 text-sm pt-3 text-slate-700 lg:w-84">
+                    <div className="inline-flex items-center rounded-full border mb-4 border-slate-200 bg-slate-50 p-1.5 text-xs font-medium text-slate-600">
+                      <button
+                        onClick={() => setActiveChannel("coach")}
+                        className={`rounded-full px-4 py-1.5 transition ${
+                          activeChannel === "coach"
+                            ? "bg-white text-slate-900 shadow"
+                            : "hover:text-slate-900"
+                        }`}
+                      >
+                        Coach assistent
+                      </button>
+                      <button
+                        onClick={() => setActiveChannel("meta")}
+                        className={`rounded-full px-4 py-1.5 transition ${
+                          activeChannel === "meta"
+                            ? "bg-white text-slate-900 shadow"
+                            : "hover:text-slate-900"
+                        }`}
+                      >
+                        Meta twin
+                      </button>
+                    </div>
+                    <div className="space-y-4 overflow-y-auto max-h-[92vh] pb-8">
                       <div className="rounded-3xl bg-white p-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white">
@@ -2135,6 +2247,46 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                             ))}
                           </div>
                         )}
+                      </div>
+                      <div className="rounded-3xl bg-white p-4">
+                        <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-foreground font-semibold">
+                          <span>Rapport</span>
+                          <div className="inline-flex items-center gap-2">
+                            {clientReport?.content && (
+                              <button
+                                type="button"
+                                onClick={handleDownloadReport}
+                                className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+                              >
+                                Download
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleGenerateReport}
+                              disabled={!selectedClientId || isReportGenerating}
+                              className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {isReportGenerating ? "Bezig..." : "Genereer"}
+                            </button>
+                          </div>
+                        </div>
+                        {reportError && (
+                          <p className="mt-2 text-[12px] text-red-500">
+                            {reportError}
+                          </p>
+                        )}
+                        {clientReport?.createdAt && (
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            Laatste rapport:{" "}
+                            {new Date(clientReport.createdAt).toLocaleString()}
+                          </p>
+                        )}
+                        <div className="mt-3 min-h-[90px] rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[13px] text-slate-700 whitespace-pre-wrap">
+                          {clientReport?.content
+                            ? clientReport.content
+                            : "Nog geen rapport gegenereerd."}
+                        </div>
                       </div>
                       <div className="rounded-3xl bg-white p-4">
                         <p className="text-[11px] uppercase tracking-wide text-foreground font-semibold">
