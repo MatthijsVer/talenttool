@@ -43,6 +43,7 @@ import type {
   ClientDocument,
   ClientProfile,
 } from "@/lib/data/store";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface CoachDashboardProps {
   clients: ClientProfile[];
@@ -99,6 +100,7 @@ const toolLinks: Array<{ label: string; icon: LucideIcon }> = [
 
 export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [clientList, setClientList] = useState<ClientProfile[]>(clients);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     clients[0]?.id ?? null
@@ -120,6 +122,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isReportGenerating, setReportGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [activeChannel, setActiveChannel] = useState<"coach" | "meta">("coach");
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isRightColumnOpen, setRightColumnOpen] = useState(false);
   const [isClientDialogOpen, setClientDialogOpen] = useState(false);
   const [isCreateClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -261,6 +265,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   useEffect(() => {
     setDisplayUser(currentUser);
   }, [currentUser]);
+
+  useEffect(() => {
+    setRightColumnOpen(false);
+    setSidebarOpen(false);
+  }, [currentUser, selectedClientId]);
 
   useEffect(() => {
     if (!isAdmin && activeSidebarTab !== "dashboard") {
@@ -1192,10 +1201,58 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         src="/talenttool-bg.png"
         className="absolute top-0 left-0 opacity-100 w-screen h-screen -z-1"
       />
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      {isRightColumnOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+          onClick={() => setRightColumnOpen(false)}
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => setSidebarOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-40 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+      >
+        Menu
+      </button>
+      <button
+        type="button"
+        onClick={() => setRightColumnOpen(true)}
+        className="lg:hidden fixed top-4 right-4 z-40 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+      >
+        Details
+      </button>
       {/* Used a very flat light grey background for the app container */}
       <div className="relative flex  h-screen max-h-screen w-full overflow-hidden text-slate-900">
         {/* Sidebar: Flat, bordered, minimal */}
-        <aside className="w-72 shrink-0 pt-7 px-1.5 flex flex-col">
+        <aside
+          className={[
+            "pt-7 px-1.5 w-72 shrink-0 flex-col lg:flex lg:relative lg:shadow-none lg:bg-transparent",
+            isSidebarOpen
+              ? "flex fixed inset-y-0 left-0 z-40 max-w-[80vw] bg-white shadow-2xl lg:static"
+              : "hidden lg:flex",
+            "transition-transform duration-200 ease-in-out lg:transition-none",
+          ].join(" ")}
+        >
+          {isMobile && (
+            <div className="flex items-center justify-between px-2 pb-3 lg:hidden">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Menu
+              </p>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+              >
+                Sluiten
+              </button>
+            </div>
+          )}
           {/* Header */}
           <div className="">
             <div className="flex items-center gap-3 px-3">
@@ -1495,10 +1552,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
                         activeSidebarTab === "user-management"
                           ? "bg-slate-900/10 text-slate-900"
-                          : "text-slate-700 hover:bg-slate-100/70",
+                          : "text-slate-900 hover:bg-slate-100/70",
                       ].join(" ")}
                     >
-                      <ShieldCheck className="size-4 text-emerald-500" />
+                      <ShieldCheck className="size-4 text-slate-900" />
                       Gebruikersbeheer
                     </button>
                   </li>
@@ -1512,10 +1569,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
                         activeSidebarTab === "prompt-center"
                           ? ""
-                          : "text-slate-700 hover:bg-slate-100/70",
+                          : "text-slate-900 hover:bg-slate-100/70",
                       ].join(" ")}
                     >
-                      <Sparkles className="size-4 text-blue-300" />
+                      <Sparkles className="size-4 text-slate-900" />
                       AI Promptcenter
                     </button>
                   </li>
@@ -1529,8 +1586,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       <li key={label}>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <button className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100/70">
-                              <Icon className="size-4 text-slate-400" />
+                            <button className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-100/70">
+                              <Icon className="size-4 text-slate-900" />
                               {label}
                             </button>
                           </DialogTrigger>
@@ -1721,319 +1778,324 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
         {/* Main Content Area */}
         <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden">
-          {error && (
-            <div className="mx-4 mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
           {activeSidebarTab === "prompt-center" ? (
-            <div className="flex h-full flex-col">
-              <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/30 bg-white/60 px-8 backdrop-blur-xl">
-                <div>
-                  <h1 className="text-lg font-semibold text-slate-900">
-                    Prompthistorie &amp; Feedback
-                  </h1>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveSidebarTab("dashboard")}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
-                  >
-                    Terug naar dashboard
-                  </button>
-                </div>
-              </header>
-              <div className="flex-1 overflow-y-auto p-6">
-                <div className="mx-auto flex max-w-8xl flex-col gap-4">
-                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          AI-modellen
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          Kies welk model beide agenten gebruiken.
-                        </p>
+            <div className="p-4 h-full">
+              <div className="flex h-full rounded-3xl flex-col pt-4 bg-white">
+                <header className="relative z-10 flex rounded-t-3xl pt-4 shrink-0 items-center justify-between border-b border-white/30 px-8 backdrop-blur-xl">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Administratie
+                    </p>
+                    <h1 className="text-lg font-semibold text-slate-900">
+                      Prompthistorie &amp; Feedback
+                    </h1>
+                  </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                  <div className="flex flex-col gap-4">
+                    <div className="rounded-2xl bg-[#f1f1f1] p-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              AI-modellen
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Kies welk model beide agenten gebruiken.
+                            </p>
+                          </div>
+                        </div>
+                        {isModelLoading ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Modellen worden geladen...
+                          </p>
+                        ) : availableModels.length === 0 ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Geen beschikbare modellen gevonden.
+                          </p>
+                        ) : (
+                          <form
+                            onSubmit={handleModelSave}
+                            className="mt-4 grid gap-4 lg:grid-cols-2"
+                          >
+                            <label className="flex flex-col gap-1 text-sm">
+                              Coach assistent
+                              <select
+                                value={coachModel}
+                                onChange={(event) =>
+                                  setCoachModel(event.target.value)
+                                }
+                                className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                required
+                              >
+                                <option value="" disabled>
+                                  Kies een model
+                                </option>
+                                {availableModels.map((option) => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-xs text-slate-500">
+                                Wordt gebruikt voor cliëntgesprekken.
+                              </span>
+                            </label>
+                            <label className="flex flex-col gap-1 text-sm">
+                              Overzichtscoach
+                              <select
+                                value={overseerModel}
+                                onChange={(event) =>
+                                  setOverseerModel(event.target.value)
+                                }
+                                className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                required
+                              >
+                                <option value="" disabled>
+                                  Kies een model
+                                </option>
+                                {availableModels.map((option) => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-xs text-slate-500">
+                                Voor trendanalyses en overzichten.
+                              </span>
+                            </label>
+                            <div className="lg:col-span-2 flex justify-end">
+                              <button
+                                type="submit"
+                                disabled={isModelSaving}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                {isModelSaving
+                                  ? "Opslaan..."
+                                  : "AI-modellen opslaan"}
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </div>
                     </div>
-                    {isModelLoading ? (
-                      <p className="mt-3 text-sm text-slate-500">
-                        Modellen worden geladen...
-                      </p>
-                    ) : availableModels.length === 0 ? (
-                      <p className="mt-3 text-sm text-slate-500">
-                        Geen beschikbare modellen gevonden.
-                      </p>
-                    ) : (
-                      <form
-                        onSubmit={handleModelSave}
-                        className="mt-4 grid gap-4 lg:grid-cols-2"
-                      >
-                        <label className="flex flex-col gap-1 text-sm">
-                          Coach assistent
-                          <select
-                            value={coachModel}
-                            onChange={(event) =>
-                              setCoachModel(event.target.value)
-                            }
-                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
-                            required
-                          >
-                            <option value="" disabled>
-                              Kies een model
-                            </option>
-                            {availableModels.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="text-xs text-slate-500">
-                            Wordt gebruikt voor cliëntgesprekken.
-                          </span>
-                        </label>
-                        <label className="flex flex-col gap-1 text-sm">
-                          Overzichtscoach
-                          <select
-                            value={overseerModel}
-                            onChange={(event) =>
-                              setOverseerModel(event.target.value)
-                            }
-                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
-                            required
-                          >
-                            <option value="" disabled>
-                              Kies een model
-                            </option>
-                            {availableModels.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="text-xs text-slate-500">
-                            Voor trendanalyses en overzichten.
-                          </span>
-                        </label>
-                        <div className="lg:col-span-2 flex justify-end">
-                          <button
-                            type="submit"
-                            disabled={isModelSaving}
-                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                          >
-                            {isModelSaving
-                              ? "Opslaan..."
-                              : "AI-modellen opslaan"}
-                          </button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {isCoachPromptLoading ? (
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                        Coachprompt wordt geladen...
-                      </div>
-                    ) : (
-                      <form
-                        onSubmit={handleCoachPromptSave}
-                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
-                      >
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-start justify-between gap-10">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900">
-                                Coachprompt
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Laatste update:{" "}
-                                {coachPromptUpdatedAt
-                                  ? new Date(
-                                      coachPromptUpdatedAt
-                                    ).toLocaleString()
-                                  : "Onbekend"}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handlePromptRegenerate("COACH")}
-                              disabled={
-                                isRefiningPrompt && refineTarget === "COACH"
-                              }
-                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              {isRefiningPrompt && refineTarget === "COACH"
-                                ? "Herschrijven..."
-                                : "Herschrijf met feedback"}
-                            </button>
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            Gebruik dit om de toon en structuur van
-                            cliëntcoaching te sturen.
-                          </p>
+                    <div className="grid gap-3 lg:grid-cols-2 bg-[#f1f1f1] p-4 rounded-3xl">
+                      {isCoachPromptLoading ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                          Coachprompt wordt geladen...
                         </div>
-                        <textarea
-                          value={coachPrompt}
-                          onChange={(event) =>
-                            setCoachPrompt(event.target.value)
-                          }
-                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
-                        />
-                        <div className="flex justify-end">
-                          <button
-                            type="submit"
-                            disabled={isCoachPromptSaving}
-                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                          >
-                            {isCoachPromptSaving ? "Opslaan..." : "Opslaan"}
-                          </button>
-                        </div>
-                      </form>
-                    )}
-
-                    {isOverseerPromptLoading ? (
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                        Overzichtsprompt wordt geladen...
-                      </div>
-                    ) : (
-                      <form
-                        onSubmit={handleOverseerPromptSave}
-                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
-                      >
-                        <div className="flex flex-col gap-1 ">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900">
-                                Overzichtscoach prompt
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Laatste update:{" "}
-                                {overseerPromptUpdatedAt
-                                  ? new Date(
-                                      overseerPromptUpdatedAt
-                                    ).toLocaleString()
-                                  : "Onbekend"}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handlePromptRegenerate("OVERSEER")}
-                              disabled={
-                                isRefiningPrompt && refineTarget === "OVERSEER"
-                              }
-                              className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-white disabled:opacity-50"
-                            >
-                              {isRefiningPrompt && refineTarget === "OVERSEER"
-                                ? "Herschrijven..."
-                                : "Herschrijf met feedback"}
-                            </button>
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            Richtlijnen voor trend- en risicoanalyses.
-                          </p>
-                        </div>
-                        <textarea
-                          value={overseerPrompt}
-                          onChange={(event) =>
-                            setOverseerPrompt(event.target.value)
-                          }
-                          className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
-                        />
-                        <div className="flex justify-end">
-                          <button
-                            type="submit"
-                            disabled={isOverseerPromptSaving}
-                            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
-                          >
-                            {isOverseerPromptSaving ? "Opslaan..." : "Opslaan"}
-                          </button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            Feedback coach assistent
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Laatste {coachFeedbackItems.length || 0} items
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                          {coachFeedbackItems.length}
-                        </span>
-                      </div>
-                      {isFeedbackLoading ? (
-                        <p className="mt-3 text-sm text-slate-500">
-                          Feedback wordt geladen...
-                        </p>
-                      ) : coachFeedbackItems.length === 0 ? (
-                        <p className="mt-3 text-sm text-slate-500">
-                          Nog geen feedback voor deze agent.
-                        </p>
                       ) : (
-                        <ul className="mt-4 space-y-3">
-                          {coachFeedbackItems.map((item) => (
-                            <li
-                              key={item.id}
-                              className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+                        <form
+                          onSubmit={handleCoachPromptSave}
+                          className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                        >
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-start justify-between gap-10">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Coachprompt
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  Laatste update:{" "}
+                                  {coachPromptUpdatedAt
+                                    ? new Date(
+                                        coachPromptUpdatedAt
+                                      ).toLocaleString()
+                                    : "Onbekend"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handlePromptRegenerate("COACH")}
+                                disabled={
+                                  isRefiningPrompt && refineTarget === "COACH"
+                                }
+                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                {isRefiningPrompt && refineTarget === "COACH"
+                                  ? "Herschrijven..."
+                                  : "Herschrijf met feedback"}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Gebruik dit om de toon en structuur van
+                              cliëntcoaching te sturen.
+                            </p>
+                          </div>
+                          <textarea
+                            value={coachPrompt}
+                            onChange={(event) =>
+                              setCoachPrompt(event.target.value)
+                            }
+                            className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={isCoachPromptSaving}
+                              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                             >
-                              <p className="text-[11px] uppercase text-slate-400">
-                                {new Date(item.createdAt).toLocaleString()}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-700">
-                                {item.feedback}
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
+                              {isCoachPromptSaving ? "Opslaan..." : "Opslaan"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {isOverseerPromptLoading ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                          Overzichtsprompt wordt geladen...
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={handleOverseerPromptSave}
+                          className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                        >
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Overzichtscoach prompt
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  Laatste update:{" "}
+                                  {overseerPromptUpdatedAt
+                                    ? new Date(
+                                        overseerPromptUpdatedAt
+                                      ).toLocaleString()
+                                    : "Onbekend"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handlePromptRegenerate("OVERSEER")
+                                }
+                                disabled={
+                                  isRefiningPrompt &&
+                                  refineTarget === "OVERSEER"
+                                }
+                                className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-white disabled:opacity-50"
+                              >
+                                {isRefiningPrompt && refineTarget === "OVERSEER"
+                                  ? "Herschrijven..."
+                                  : "Herschrijf met feedback"}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Richtlijnen voor trend- en risicoanalyses.
+                            </p>
+                          </div>
+                          <textarea
+                            value={overseerPrompt}
+                            onChange={(event) =>
+                              setOverseerPrompt(event.target.value)
+                            }
+                            className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={isOverseerPromptSaving}
+                              className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
+                            >
+                              {isOverseerPromptSaving
+                                ? "Opslaan..."
+                                : "Opslaan"}
+                            </button>
+                          </div>
+                        </form>
                       )}
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            Feedback overzichtscoach
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Laatste {overseerFeedbackItems.length || 0} items
-                          </p>
+
+                    <div className="grid gap-3 lg:grid-cols-2 bg-[#f1f1f1] p-4 rounded-3xl">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Feedback coach assistent
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Laatste {coachFeedbackItems.length || 0} items
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                            {coachFeedbackItems.length}
+                          </span>
                         </div>
-                        <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
-                          {overseerFeedbackItems.length}
-                        </span>
+                        {isFeedbackLoading ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Feedback wordt geladen...
+                          </p>
+                        ) : coachFeedbackItems.length === 0 ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Nog geen feedback voor deze agent.
+                          </p>
+                        ) : (
+                          <ul className="mt-4 space-y-3">
+                            {coachFeedbackItems.map((item) => (
+                              <li
+                                key={item.id}
+                                className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+                              >
+                                <p className="text-[11px] uppercase text-slate-400">
+                                  {new Date(item.createdAt).toLocaleString()}
+                                </p>
+                                <p className="mt-1 text-sm text-slate-700">
+                                  {item.feedback}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      {isFeedbackLoading ? (
-                        <p className="mt-3 text-sm text-slate-500">
-                          Feedback wordt geladen...
-                        </p>
-                      ) : overseerFeedbackItems.length === 0 ? (
-                        <p className="mt-3 text-sm text-slate-500">
-                          Nog geen feedback voor deze agent.
-                        </p>
-                      ) : (
-                        <ul className="mt-4 space-y-3">
-                          {overseerFeedbackItems.map((item) => (
-                            <li
-                              key={item.id}
-                              className="rounded-xl border border-purple-100 bg-purple-50/40 p-3"
-                            >
-                              <p className="text-[11px] uppercase text-purple-400">
-                                {new Date(item.createdAt).toLocaleString()}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-700">
-                                {item.feedback}
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Feedback overzichtscoach
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Laatste {overseerFeedbackItems.length || 0} items
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
+                            {overseerFeedbackItems.length}
+                          </span>
+                        </div>
+                        {isFeedbackLoading ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Feedback wordt geladen...
+                          </p>
+                        ) : overseerFeedbackItems.length === 0 ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Nog geen feedback voor deze agent.
+                          </p>
+                        ) : (
+                          <ul className="mt-4 space-y-3">
+                            {overseerFeedbackItems.map((item) => (
+                              <li
+                                key={item.id}
+                                className="rounded-xl border border-purple-100 bg-purple-50/40 p-3"
+                              >
+                                <p className="text-[11px] uppercase text-purple-400">
+                                  {new Date(item.createdAt).toLocaleString()}
+                                </p>
+                                <p className="mt-1 text-sm text-slate-700">
+                                  {item.feedback}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2055,7 +2117,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     bg-white/25
     backdrop-blur-2xl backdrop-saturate-120
 
-    p-4
+    p-2 md:p-4
     pt-0
     text-sm text-slate-800
 
@@ -2071,17 +2133,17 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   />
 
                   {/* Actual content */}
-                  <section className="flex flex-1 relative z-20  min-h-0 flex-col rounded-2xl">
+                  <section className="flex flex-1 relative z-20 min-h-0 flex-col rounded-2xl pb-0 min-w-full lg:min-w-0">
                     <div className="flex min-h-0 flex-1 flex-col">
                       {activeChannel === "coach" ? (
                         <>
                           <div
                             ref={coachMessagesRef}
-                            className="flex-1 space-y-3 flex flex-col overflow-y-auto px-5 py-5"
+                            className="flex-1 space-y-3 flex flex-col overflow-y-auto lg:px-5 pb-5 lg:py-5"
                           >
                             {messages.length === 0 ? (
-                              <div className="flex h-fit w-fit p-6 mt-8  flex-col items-start justify-center gap-2 rounded-3xl rounded-tl-md bg-white">
-                                <MessageSquare className="size-4" />
+                              <div className="flex h-fit w-fit py-2 pl-5 pr-7 mt-4 bg-white items-center justify-center gap-2 rounded-3xl m-auto">
+                                <MessageSquare className="size-3.5" />
                                 <p>Start een gesprek met je cliënt.</p>
                               </div>
                             ) : (
@@ -2097,7 +2159,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     }`}
                                   >
                                     <div
-                                      className={`max-w-[75%] rounded-3xl leading-relaxed ${
+                                      className={`max-w-[86%] lg:max-w-[75%] rounded-3xl leading-relaxed ${
                                         isAi
                                           ? " bg-white rounded-tl-md p-5 text-slate-900"
                                           : "bg-[#222222] rounded-tr-md p-3 text-white"
@@ -2133,7 +2195,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                           </div>
                           <form
                             onSubmit={handleCoachSubmit}
-                            className="px-4 pb-4"
+                            className="md:px-4 md:pb-4"
                           >
                             <div className="rounded-3xl relative bg-[#FFFF] border">
                               <textarea
@@ -2249,7 +2311,28 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       )}
                     </div>
                   </section>
-                  <aside className="min-h-0 relative z-20 w-full shrink-0 text-sm pt-3 text-slate-700 lg:w-84">
+                  <aside
+                    className={[
+                      "min-h-0 relative z-50 w-full shrink-0 text-sm pt-3 text-slate-700 lg:w-84",
+                      "transition-transform duration-200 ease-in-out lg:transition-none",
+                      isRightColumnOpen
+                        ? "translate-x-0"
+                        : "translate-x-full lg:translate-x-0",
+                      "fixed inset-y-0 right-0 w-full max-w-sm bg-white shadow-2xl lg:static lg:max-w-none lg:bg-transparent lg:shadow-none",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between px-4 lg:hidden">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Cliëntdetails
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setRightColumnOpen(false)}
+                        className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                      >
+                        Sluiten
+                      </button>
+                    </div>
                     <div className="inline-flex items-center rounded-full border mb-4 border-slate-200 bg-slate-50 p-1.5 text-xs font-medium text-slate-600">
                       <button
                         onClick={() => setActiveChannel("coach")}
@@ -2274,7 +2357,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         </button>
                       )}
                     </div>
-                    <div className="space-y-4 overflow-y-auto max-h-[92vh] pb-8">
+                    <div className="space-y-4 overflow-y-auto max-h-[92vh] pb-8 px-4 lg:px-0">
                       <div className="rounded-3xl bg-white p-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white">

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   ClipboardCopy,
-  RefreshCw,
   Shield,
   UserPlus,
   Users,
@@ -24,6 +23,7 @@ type AdminUser = {
   email: string;
   role: "ADMIN" | "COACH";
   createdAt: string;
+  image?: string | null;
 };
 
 type PendingInvite = {
@@ -40,6 +40,20 @@ interface AdminUserManagementProps {
   onBack: () => void;
 }
 
+const roleOptions: Array<{ value: AdminUser["role"]; label: string }> = [
+  { value: "COACH", label: "Coach" },
+  { value: "ADMIN", label: "Admin" },
+];
+
+function getInitials(name?: string, email?: string) {
+  const source = name?.trim() || email?.trim();
+  if (!source) return "";
+  const parts = source.split(/\s+/);
+  const first = parts[0]?.charAt(0) ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) ?? "" : "";
+  return (first + last).toUpperCase();
+}
+
 export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -50,6 +64,7 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [isCreatingInvite, setCreatingInvite] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   const coachCount = useMemo(
     () => users.filter((user) => user.role === "COACH").length,
@@ -136,6 +151,47 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
     }
   }
 
+  async function handleRoleChange(userId: string, nextRole: AdminUser["role"]) {
+    const target = users.find((entry) => entry.id === userId);
+    if (!target || target.role === nextRole) {
+      return;
+    }
+
+    setUpdatingUserId(userId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error ?? "Rol bijwerken is mislukt.");
+      }
+
+      const updatedUser = data.user as AdminUser | undefined;
+      if (updatedUser) {
+        setUsers((prev) =>
+          prev.map((user) => (user.id === userId ? updatedUser : user))
+        );
+      } else {
+        await fetchOverview();
+      }
+    } catch (updateError) {
+      const message =
+        updateError instanceof Error
+          ? updateError.message
+          : "Rol bijwerken is mislukt.";
+      setError(message);
+    } finally {
+      setUpdatingUserId(null);
+    }
+  }
+
   function closeInviteDialog() {
     setInviteDialogOpen(false);
     setInviteEmail("");
@@ -155,6 +211,13 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
               Gebruikersbeheer
             </h1>
           </div>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center rounded-full border border-slate-200 px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-white"
+          >
+            Terug naar dashboard
+          </button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -166,8 +229,8 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl bg-[#f1f1f1] p-2">
               <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
-                <div className="rounded-full bg-[#F3CDFE] p-2 text-slate-900">
-                  <Users className="size-5" />
+                <div className="rounded-full bg-[#F3CDFE] p-3 text-slate-900">
+                  <Users className="size-4" />
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -181,8 +244,8 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
             </div>
             <div className="rounded-2xl bg-[#f1f1f1] p-2">
               <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
-                <div className="rounded-full bg-[#FDEDD3] p-2 text-slate-900">
-                  <Shield className="size-5" />
+                <div className="rounded-full bg-[#FDEDD3] p-3 text-slate-900">
+                  <Shield className="size-4" />
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -196,8 +259,8 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
             </div>
             <div className="rounded-2xl bg-[#f1f1f1] p-2">
               <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
-                <div className="rounded-full bg-[#B4D1EF] p-2 text-slate-900">
-                  <UserPlus className="size-5" />
+                <div className="rounded-full bg-[#B4D1EF] p-3 text-slate-900">
+                  <UserPlus className="size-4" />
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -324,37 +387,72 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
                         </td>
                       </tr>
                     ) : (
-                      users.map((user) => (
-                        <tr key={user.id}>
-                          <td className="px-3 py-2 text-slate-900">
-                            {user.name || "Onbekend"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {user.email}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                user.role === "ADMIN"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-slate-100 text-slate-700"
-                              }`}
-                            >
-                              {user.role === "ADMIN" ? "Admin" : "Coach"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-500">
-                            {new Date(user.createdAt).toLocaleDateString(
-                              "nl-NL",
-                              {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                              }
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                      users.map((user) => {
+                        const isRowUpdating = updatingUserId === user.id;
+                        const initials = getInitials(user.name, user.email);
+                        return (
+                          <tr key={user.id}>
+                            <td className="px-3 py-2 text-slate-900">
+                              <div className="flex items-center gap-3">
+                                <div className="size-10 rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200 flex items-center justify-center overflow-hidden">
+                                  {user.image ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={user.image}
+                                      alt={user.name}
+                                      className="size-10 object-cover"
+                                    />
+                                  ) : (
+                                    <span className="text-xs font-semibold">
+                                      {initials ||
+                                        user.email.charAt(0).toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-semibold">
+                                  {user.name || "Onbekend"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {user.email}
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={user.role}
+                                onChange={(event) =>
+                                  handleRoleChange(
+                                    user.id,
+                                    event.target.value as AdminUser["role"]
+                                  )
+                                }
+                                disabled={isRowUpdating}
+                                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 focus:border-slate-900 focus:outline-none disabled:opacity-60"
+                                aria-label="Wijzig rol"
+                              >
+                                {roleOptions.map((option) => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {new Date(user.createdAt).toLocaleDateString(
+                                "nl-NL",
+                                {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                }
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

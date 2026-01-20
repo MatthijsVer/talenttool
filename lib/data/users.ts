@@ -14,6 +14,7 @@ export interface AdminUserSummary {
   email: string;
   role: UserRole;
   createdAt: string;
+  image?: string | null;
 }
 
 export interface PendingInviteSummary {
@@ -80,13 +81,17 @@ export async function listAdminUsers(): Promise<AdminUserSummary[]> {
       email: true,
       role: true,
       createdAt: true,
+      image: true,
     },
   });
 
-  return users.map((user) => ({
-    ...user,
-    createdAt: user.createdAt.toISOString(),
-  }));
+  return users.map(mapAdminUserSummary);
+}
+
+export async function countAdmins(): Promise<number> {
+  return prisma.user.count({
+    where: { role: "ADMIN" },
+  });
 }
 
 export async function listPendingInvites(): Promise<PendingInviteSummary[]> {
@@ -226,4 +231,22 @@ export async function isCoachUser(userId: string): Promise<boolean> {
   });
 
   return Boolean(coach);
+}
+
+export function mapAdminUserSummary(user: {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: Date;
+  image?: string | null;
+}): AdminUserSummary {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt.toISOString(),
+    image: user.image ?? null,
+  };
 }
