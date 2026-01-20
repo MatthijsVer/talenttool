@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Edit2,
   ArrowUp,
+  ArrowLeft,
   ShieldCheck,
 } from "lucide-react";
 import type { UserRole } from "@prisma/client";
@@ -122,8 +123,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isReportGenerating, setReportGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [activeChannel, setActiveChannel] = useState<"coach" | "meta">("coach");
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isRightColumnOpen, setRightColumnOpen] = useState(false);
+  const [mobileView, setMobileView] = useState<"list" | "chat">(() => {
+    if (typeof window === "undefined") {
+      return "chat";
+    }
+    return window.innerWidth < 768 ? "list" : "chat";
+  });
   const [isClientDialogOpen, setClientDialogOpen] = useState(false);
   const [isCreateClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
@@ -268,8 +274,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
   useEffect(() => {
     setRightColumnOpen(false);
-    setSidebarOpen(false);
   }, [currentUser, selectedClientId]);
+
+  useEffect(() => {
+    if (mobileView === "list") {
+      setRightColumnOpen(false);
+    }
+  }, [mobileView]);
 
   useEffect(() => {
     if (!isAdmin && activeSidebarTab !== "dashboard") {
@@ -283,12 +294,34 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
   }, [isAdmin, activeChannel]);
 
+  useEffect(() => {
+    const viewportIsMobile =
+      typeof window !== "undefined" && window.innerWidth < 768;
+    if (!isMobile) {
+      if (viewportIsMobile) {
+        return;
+      }
+      setMobileView("chat");
+      return;
+    }
+    if (activeSidebarTab === "dashboard") {
+      setMobileView("list");
+    } else {
+      setMobileView("chat");
+    }
+  }, [isMobile, activeSidebarTab]);
+
   const selectedClient = useMemo(
     () => clientList.find((client) => client.id === selectedClientId),
     [clientList, selectedClientId]
   );
   const selectedClientInitials = getInitials(selectedClient?.name);
   const newClientInitials = getInitials(newClientForm.name);
+  const isDashboardTab = activeSidebarTab === "dashboard";
+  const showSidebar = !isMobile || mobileView === "list";
+  const showMainContent = !isMobile || mobileView === "chat";
+  const isMobileDashboardChat =
+    isMobile && isDashboardTab && mobileView === "chat";
 
   useEffect(() => {
     if (!selectedClientId) return;
@@ -1201,58 +1234,31 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         src="/talenttool-bg.png"
         className="absolute top-0 left-0 opacity-100 w-screen h-screen -z-1"
       />
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
       {isRightColumnOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/30 lg:hidden"
           onClick={() => setRightColumnOpen(false)}
         />
       )}
-      <button
-        type="button"
-        onClick={() => setSidebarOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-40 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-      >
-        Menu
-      </button>
-      <button
-        type="button"
-        onClick={() => setRightColumnOpen(true)}
-        className="lg:hidden fixed top-4 right-4 z-40 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-      >
-        Details
-      </button>
+      {isMobile && mobileView === "chat" && !isDashboardTab && (
+        <button
+          type="button"
+          onClick={() => setMobileView("list")}
+          className="lg:hidden fixed top-4 left-4 z-40 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+        >
+          Menu
+        </button>
+      )}
       {/* Used a very flat light grey background for the app container */}
       <div className="relative flex  h-screen max-h-screen w-full overflow-hidden text-slate-900">
         {/* Sidebar: Flat, bordered, minimal */}
         <aside
           className={[
-            "pt-7 px-1.5 w-72 shrink-0 flex-col lg:flex lg:relative lg:shadow-none lg:bg-transparent",
-            isSidebarOpen
-              ? "flex fixed inset-y-0 left-0 z-40 max-w-[80vw] bg-white shadow-2xl lg:static"
-              : "hidden lg:flex",
-            "transition-transform duration-200 ease-in-out lg:transition-none",
+            "pt-7 px-1.5 w-full lg:w-72 shrink-0 flex-col lg:flex lg:relative lg:shadow-none lg:bg-transparent bg-white",
+            showSidebar ? "flex" : "hidden lg:flex",
+            "h-full lg:h-auto overflow-y-auto lg:overflow-visible",
           ].join(" ")}
         >
-          {isMobile && (
-            <div className="flex items-center justify-between px-2 pb-3 lg:hidden">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Menu
-              </p>
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(false)}
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-              >
-                Sluiten
-              </button>
-            </div>
-          )}
           {/* Header */}
           <div className="">
             <div className="flex items-center gap-3 px-3">
@@ -1502,6 +1508,9 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         onClick={() => {
                           setSelectedClientId(client.id);
                           setActiveSidebarTab("dashboard");
+                          if (isMobile) {
+                            setMobileView("chat");
+                          }
                         }}
                         className={[
                           "group w-full flex items-center gap-3 border border-transparent rounded-lg px-2 py-2 text-left transition",
@@ -1547,7 +1556,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   <li>
                     <button
                       type="button"
-                      onClick={() => setActiveSidebarTab("user-management")}
+                      onClick={() => {
+                        setActiveSidebarTab("user-management");
+                        if (isMobile) {
+                          setMobileView("chat");
+                        }
+                      }}
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
                         activeSidebarTab === "user-management"
@@ -1564,7 +1578,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   <li>
                     <button
                       type="button"
-                      onClick={() => setActiveSidebarTab("prompt-center")}
+                      onClick={() => {
+                        setActiveSidebarTab("prompt-center");
+                        if (isMobile) {
+                          setMobileView("chat");
+                        }
+                      }}
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm font-medium transition",
                         activeSidebarTab === "prompt-center"
@@ -1777,7 +1796,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden">
+        <main
+          className={[
+            "flex flex-1 min-h-0 flex-col min-w-0 overflow-hidden",
+            showMainContent ? "flex" : "hidden lg:flex",
+          ].join(" ")}
+        >
           {activeSidebarTab === "prompt-center" ? (
             <div className="p-4 h-full">
               <div className="flex h-full rounded-3xl flex-col pt-4 bg-white">
@@ -2107,17 +2131,18 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
             />
           ) : (
             <>
-              <div className="relative flex-1 min-h-0 overflow-hidden p-2">
+              <div className="relative flex-1 min-h-0 overflow-hidden p-1 md:p-2">
                 <div
                   className="
     relative flex h-full min-h-0 gap-4
-    rounded-[36px]
+    rounded-xl
+    md:rounded-[36px]
     overflow-hidden
 
     bg-white/25
     backdrop-blur-2xl backdrop-saturate-120
 
-    p-2 md:p-4
+    p-0 md:p-4
     pt-0
     text-sm text-slate-800
 
@@ -2135,6 +2160,53 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   {/* Actual content */}
                   <section className="flex flex-1 relative z-20 min-h-0 flex-col rounded-2xl pb-0 min-w-full lg:min-w-0">
                     <div className="flex min-h-0 flex-1 flex-col">
+                      {isMobileDashboardChat && (
+                        <div className="flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => setMobileView("list")}
+                            className="inline-flex items-center gap-1 rounded-full  text-xs font-semibold text-slate-600"
+                          >
+                            <ArrowLeft className="size-3" />
+                          </button>
+                          <div className="flex flex-1 items-center gap-3 min-w-0">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white overflow-hidden">
+                              {selectedClient?.avatarUrl ? (
+                                <Image
+                                  src={selectedClient.avatarUrl}
+                                  alt={selectedClient?.name ?? "Cliënt"}
+                                  width={40}
+                                  height={40}
+                                  className="size-10 object-cover"
+                                  unoptimized
+                                />
+                              ) : selectedClientInitials ? (
+                                <span className="text-sm font-semibold">
+                                  {selectedClientInitials}
+                                </span>
+                              ) : (
+                                <UserRound className="size-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">
+                                {selectedClient?.name ?? "Selecteer een cliënt"}
+                              </p>
+                              <p className="text-xs text-slate-500 truncate">
+                                {selectedClient?.focusArea || "Geen focus"}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setRightColumnOpen(true)}
+                            disabled={!selectedClient}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Cliëntdetails
+                          </button>
+                        </div>
+                      )}
                       {activeChannel === "coach" ? (
                         <>
                           <div
