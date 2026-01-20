@@ -1969,8 +1969,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     <div
                                       className={`max-w-[75%] rounded-3xl leading-relaxed ${
                                         isAi
-                                          ? " bg-white p-5 text-slate-900"
-                                          : "bg-[#222222] p-3 text-white"
+                                          ? " bg-white rounded-tl-md p-5 text-slate-900"
+                                          : "bg-[#222222] rounded-tr-md p-3 text-white"
                                       }`}
                                     >
                                       <p className="whitespace-pre-wrap">
