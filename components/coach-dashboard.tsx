@@ -190,7 +190,9 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     Array<{ id: string; name?: string | null; email: string }>
   >([]);
   const [isCoachOptionsLoading, setCoachOptionsLoading] = useState(false);
-  const [coachOptionsError, setCoachOptionsError] = useState<string | null>(null);
+  const [coachOptionsError, setCoachOptionsError] = useState<string | null>(
+    null
+  );
   const [hasRequestedCoachOptions, setHasRequestedCoachOptions] =
     useState(false);
   const editClientAvatarInputId = useId();
@@ -2075,11 +2077,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                         <>
                           <div
                             ref={coachMessagesRef}
-                            className="flex-1 space-y-3 overflow-y-auto px-5 py-5"
+                            className="flex-1 space-y-3 flex flex-col overflow-y-auto px-5 py-5"
                           >
                             {messages.length === 0 ? (
-                              <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
-                                <MessageSquare className="size-5" />
+                              <div className="flex h-fit w-fit p-6 mt-8  flex-col items-start justify-center gap-2 rounded-3xl rounded-tl-md bg-white">
+                                <MessageSquare className="size-4" />
                                 <p>Start een gesprek met je cliënt.</p>
                               </div>
                             ) : (
@@ -2107,7 +2109,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                       {isAdmin &&
                                         message.role === "assistant" &&
                                         isAi && (
-                                          <div className="mt-2 text-[10px]">
+                                          <div className="mt-2 text-[11px]">
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -2119,7 +2121,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                               className="inline-flex items-center gap-1 text-red-500 underline-offset-2 hover:underline"
                                             >
                                               <AlertTriangle className="size-3" />
-                                              Feedback
+                                              Geef feedback op AI
                                             </button>
                                           </div>
                                         )}
@@ -2493,7 +2495,9 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     className="rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
                                     disabled={isCoachOptionsLoading}
                                   >
-                                    <option value="">Nog niet toegewezen</option>
+                                    <option value="">
+                                      Nog niet toegewezen
+                                    </option>
                                     {coachOptions.map((coach) => (
                                       <option key={coach.id} value={coach.id}>
                                         {coach.name?.trim()

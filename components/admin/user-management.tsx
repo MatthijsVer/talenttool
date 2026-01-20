@@ -146,7 +146,7 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
   return (
     <div className="p-4 h-full">
       <div className="flex h-full rounded-3xl flex-col pt-4 bg-white">
-        <header className="relative z-10 flex rounded-t-3xl h-16 shrink-0 items-center justify-between border-b border-white/30 px-8 backdrop-blur-xl">
+        <header className="relative z-10 flex rounded-t-3xl pt-4 shrink-0 items-center justify-between border-b border-white/30 px-8 backdrop-blur-xl">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Administratie
@@ -154,23 +154,6 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
             <h1 className="text-lg font-semibold text-slate-900">
               Gebruikersbeheer
             </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={fetchOverview}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
-            >
-              <RefreshCw className="size-4" />
-              Vernieuwen
-            </button>
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
-            >
-              Terug naar dashboard
-            </button>
           </div>
         </header>
 
@@ -181,9 +164,9 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
             </div>
           )}
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-slate-900/10 p-2 text-slate-900">
+            <div className="rounded-2xl bg-[#f1f1f1] p-2">
+              <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
+                <div className="rounded-full bg-[#F3CDFE] p-2 text-slate-900">
                   <Users className="size-5" />
                 </div>
                 <div>
@@ -196,9 +179,9 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
                 </div>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+            <div className="rounded-2xl bg-[#f1f1f1] p-2">
+              <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
+                <div className="rounded-full bg-[#FDEDD3] p-2 text-slate-900">
                   <Shield className="size-5" />
                 </div>
                 <div>
@@ -211,9 +194,9 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
                 </div>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
+            <div className="rounded-2xl bg-[#f1f1f1] p-2">
+              <div className="flex items-center gap-3 bg-white p-2 rounded-lg">
+                <div className="rounded-full bg-[#B4D1EF] p-2 text-slate-900">
                   <UserPlus className="size-5" />
                 </div>
                 <div>
@@ -256,7 +239,7 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
               </p>
               <ul className="mt-4 space-y-3">
                 {invites.length === 0 ? (
-                  <li className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  <li className="rounded-xl border border-dashed border-slate-200 bg-[#f1f1f1] px-4 py-6 text-center text-sm text-slate-500">
                     Geen openstaande uitnodigingen.
                   </li>
                 ) : (
