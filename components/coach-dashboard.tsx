@@ -17,9 +17,6 @@ import {
   MessageSquare,
   Paperclip,
   Settings,
-  Target,
-  CheckCircle2,
-  Lightbulb,
   UserRound,
   Plus,
   Sparkles,
@@ -132,12 +129,14 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     summary: "",
     goals: "",
     avatarUrl: "",
+    coachId: "",
   });
   const [newClientForm, setNewClientForm] = useState({
     name: "",
     focusArea: "",
     summary: "",
     goals: "",
+    coachId: "",
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [newClientAvatarFile, setNewClientAvatarFile] = useState<File | null>(
@@ -187,6 +186,13 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const [isSigningOut, setSigningOut] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] =
     useState<SettingsTab>("profile");
+  const [coachOptions, setCoachOptions] = useState<
+    Array<{ id: string; name?: string | null; email: string }>
+  >([]);
+  const [isCoachOptionsLoading, setCoachOptionsLoading] = useState(false);
+  const [coachOptionsError, setCoachOptionsError] = useState<string | null>(null);
+  const [hasRequestedCoachOptions, setHasRequestedCoachOptions] =
+    useState(false);
   const editClientAvatarInputId = useId();
   const newClientAvatarInputId = useId();
   const userAvatarInputId = useId();
@@ -210,6 +216,38 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     ],
     []
   );
+
+  useEffect(() => {
+    if (!isAdmin || hasRequestedCoachOptions) {
+      return;
+    }
+    setHasRequestedCoachOptions(true);
+    setCoachOptionsLoading(true);
+    setCoachOptionsError(null);
+
+    const loadCoaches = async () => {
+      try {
+        const response = await fetch("/api/admin/coaches");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error ?? "Kan coaches niet ophalen.");
+        }
+        setCoachOptions(Array.isArray(data.coaches) ? data.coaches : []);
+      } catch (fetchError) {
+        console.error(fetchError);
+        setCoachOptionsError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "Kan coaches niet ophalen."
+        );
+        setHasRequestedCoachOptions(false);
+      } finally {
+        setCoachOptionsLoading(false);
+      }
+    };
+
+    void loadCoaches();
+  }, [isAdmin, hasRequestedCoachOptions]);
   const activeSettings =
     settingsSections.find((section) => section.id === activeSettingsTab) ??
     settingsSections[0];
@@ -221,6 +259,18 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   useEffect(() => {
     setDisplayUser(currentUser);
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!isAdmin && activeSidebarTab !== "dashboard") {
+      setActiveSidebarTab("dashboard");
+    }
+  }, [isAdmin, activeSidebarTab]);
+
+  useEffect(() => {
+    if (!isAdmin && activeChannel === "meta") {
+      setActiveChannel("coach");
+    }
+  }, [isAdmin, activeChannel]);
 
   const selectedClient = useMemo(
     () => clientList.find((client) => client.id === selectedClientId),
@@ -256,6 +306,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       summary: selectedClient.summary,
       goals: selectedClient.goals.join(", "),
       avatarUrl: selectedClient.avatarUrl ?? "",
+      coachId: selectedClient.coachId ?? "",
     });
     setAvatarFile(null);
   }, [selectedClient, isClientDialogOpen]);
@@ -285,7 +336,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
   }
 
-  async function fetchOverseerThread() {
+  const fetchOverseerThread = useCallback(async () => {
+    if (!isAdmin) {
+      setOverseerThread([]);
+      return;
+    }
     try {
       const response = await fetch("/api/overseer");
       if (!response.ok) throw new Error("Kan overview-gesprek niet laden.");
@@ -294,7 +349,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     } catch (fetchError) {
       console.error(fetchError);
     }
-  }
+  }, [isAdmin]);
 
   async function fetchClientDocuments(clientId: string) {
     try {
@@ -334,7 +389,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
   }
 
-  async function fetchCoachPrompt() {
+  const fetchCoachPrompt = useCallback(async () => {
     setCoachPromptLoading(true);
     try {
       const response = await fetch("/api/prompts/coach");
@@ -350,9 +405,14 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     } finally {
       setCoachPromptLoading(false);
     }
-  }
+  }, []);
 
-  async function fetchOverseerPrompt() {
+  const fetchOverseerPrompt = useCallback(async () => {
+    if (!isAdmin) {
+      setOverseerPrompt("");
+      setOverseerPromptUpdatedAt(null);
+      return;
+    }
     setOverseerPromptLoading(true);
     try {
       const response = await fetch("/api/prompts/overseer");
@@ -368,7 +428,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     } finally {
       setOverseerPromptLoading(false);
     }
-  }
+  }, [isAdmin]);
 
   const fetchModelSettings = useCallback(async () => {
     if (!isAdmin) {
@@ -433,11 +493,23 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   }, [isAdmin]);
 
   useEffect(() => {
-    void fetchOverseerThread();
+    if (isAdmin) {
+      void fetchOverseerThread();
+      void fetchOverseerPrompt();
+    } else {
+      setOverseerThread([]);
+      setOverseerPrompt("");
+      setOverseerPromptUpdatedAt(null);
+    }
     void fetchCoachPrompt();
-    void fetchOverseerPrompt();
     void fetchModelSettings();
-  }, [fetchModelSettings]);
+  }, [
+    fetchCoachPrompt,
+    fetchModelSettings,
+    fetchOverseerPrompt,
+    fetchOverseerThread,
+    isAdmin,
+  ]);
 
   useEffect(() => {
     void fetchFeedbackList();
@@ -767,6 +839,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
             .split(",")
             .map((goal) => goal.trim())
             .filter(Boolean),
+          coachId: clientForm.coachId ? clientForm.coachId : null,
         }),
       });
 
@@ -867,6 +940,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
             .map((goal) => goal.trim())
             .filter((goal) => goal.length > 0),
           ...(avatarUrl ? { avatarUrl } : {}),
+          coachId: newClientForm.coachId ? newClientForm.coachId : null,
         }),
       });
       const data = await response.json();
@@ -885,6 +959,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
         focusArea: "",
         summary: "",
         goals: "",
+        coachId: "",
       });
       setNewClientAvatarFile(null);
     } catch (newClientError) {
@@ -1042,16 +1117,6 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     [clientDocuments, selectedClientId]
   );
 
-  const latestCoachFeedback = useMemo(() => {
-    const assistantMessages = messages.filter(
-      (message) => message.role === "assistant"
-    );
-    if (assistantMessages.length === 0) {
-      return "Nog geen feedback beschikbaar. Start een gesprek met de coach assistent om nieuwe inzichten te verzamelen.";
-    }
-    return assistantMessages[assistantMessages.length - 1]?.content;
-  }, [messages]);
-
   const strengthsAndWatchouts = useMemo(() => {
     if (!selectedClient) {
       return [
@@ -1179,6 +1244,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                           focusArea: "",
                           summary: "",
                           goals: "",
+                          coachId: "",
                         });
                         setNewClientAvatarFile(null);
                       }
@@ -1310,6 +1376,40 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                             className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
                             placeholder="Bijv. Communicatie verbeteren, Energie bewaken"
                           />
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm">
+                          Toegewezen coach
+                          <select
+                            value={newClientForm.coachId}
+                            onChange={(event) =>
+                              setNewClientForm((form) => ({
+                                ...form,
+                                coachId: event.target.value,
+                              }))
+                            }
+                            className="rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                            disabled={isCoachOptionsLoading}
+                          >
+                            <option value="">Nog niet toegewezen</option>
+                            {coachOptions.map((coach) => (
+                              <option key={coach.id} value={coach.id}>
+                                {coach.name?.trim()
+                                  ? `${coach.name} (${coach.email})`
+                                  : coach.email}
+                              </option>
+                            ))}
+                          </select>
+                          {coachOptionsError ? (
+                            <span className="text-xs text-rose-600">
+                              {coachOptionsError}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500">
+                              {coachOptions.length === 0
+                                ? "Nodig coaches uit om cliënten toe te wijzen."
+                                : "Deze coach krijgt toegang tot dit dossier."}
+                            </span>
+                          )}
                         </label>
                         <div className="flex justify-end gap-2 text-sm">
                           <button
@@ -1619,6 +1719,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
         {/* Main Content Area */}
         <main className="flex-1 flex min-h-0 flex-col min-w-0 overflow-hidden">
+          {error && (
+            <div className="mx-4 mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
           {activeSidebarTab === "prompt-center" ? (
             <div className="flex h-full flex-col">
               <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/30 bg-white/60 px-8 backdrop-blur-xl">
@@ -2154,16 +2259,18 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                       >
                         Coach assistent
                       </button>
-                      <button
-                        onClick={() => setActiveChannel("meta")}
-                        className={`rounded-full px-4 py-1.5 transition ${
-                          activeChannel === "meta"
-                            ? "bg-white text-slate-900 shadow"
-                            : "hover:text-slate-900"
-                        }`}
-                      >
-                        Meta twin
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setActiveChannel("meta")}
+                          className={`rounded-full px-4 py-1.5 transition ${
+                            activeChannel === "meta"
+                              ? "bg-white text-slate-900 shadow"
+                              : "hover:text-slate-900"
+                          }`}
+                        >
+                          Meta twin
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-4 overflow-y-auto max-h-[92vh] pb-8">
                       <div className="rounded-3xl bg-white p-4">
@@ -2216,6 +2323,220 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                             </span>
                           )}
                         </div>
+                        {isAdmin && selectedClient && (
+                          <Dialog
+                            open={isClientDialogOpen}
+                            onOpenChange={(open) => {
+                              setClientDialogOpen(open);
+                              if (!open) {
+                                setAvatarFile(null);
+                                setEditingClientId(null);
+                              }
+                            }}
+                          >
+                            <DialogTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingClientId(selectedClient.id);
+                                  setAvatarFile(null);
+                                  setClientForm({
+                                    name: selectedClient.name,
+                                    focusArea: selectedClient.focusArea,
+                                    summary: selectedClient.summary,
+                                    goals: selectedClient.goals.join(", "),
+                                    avatarUrl: selectedClient.avatarUrl ?? "",
+                                    coachId: selectedClient.coachId ?? "",
+                                  });
+                                }}
+                                className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                <Edit2 className="size-3.5" />
+                                Bewerk cliënt
+                              </button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl space-y-4">
+                              <DialogHeader>
+                                <DialogTitle>Bewerk cliënt</DialogTitle>
+                                <DialogDescription>
+                                  Werk gegevens bij voor {selectedClient.name}.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <form
+                                className="space-y-4"
+                                onSubmit={handleClientSave}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="size-16 rounded-full border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center overflow-hidden">
+                                    {avatarFile ? (
+                                      <>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={URL.createObjectURL(avatarFile)}
+                                          alt="Nieuwe avatar"
+                                          className="size-16 object-cover"
+                                        />
+                                      </>
+                                    ) : clientForm.avatarUrl ? (
+                                      <>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={clientForm.avatarUrl}
+                                          alt={clientForm.name}
+                                          className="size-16 object-cover"
+                                        />
+                                      </>
+                                    ) : selectedClientInitials ? (
+                                      <span className="text-sm font-semibold">
+                                        {selectedClientInitials}
+                                      </span>
+                                    ) : (
+                                      <UserRound className="size-5" />
+                                    )}
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    <input
+                                      id={editClientAvatarInputId}
+                                      type="file"
+                                      accept="image/*"
+                                      className="sr-only"
+                                      onChange={(event) =>
+                                        setAvatarFile(
+                                          event.target.files?.[0] ?? null
+                                        )
+                                      }
+                                    />
+                                    <label
+                                      htmlFor={editClientAvatarInputId}
+                                      className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                    >
+                                      Kies nieuwe foto
+                                    </label>
+                                    {avatarFile && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setAvatarFile(null)}
+                                        className="block text-left text-xs text-slate-500 hover:text-slate-700"
+                                      >
+                                        Verwijder selectie
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <label className="flex flex-col gap-1 text-sm">
+                                  Naam
+                                  <input
+                                    type="text"
+                                    value={clientForm.name}
+                                    onChange={(event) =>
+                                      setClientForm((form) => ({
+                                        ...form,
+                                        name: event.target.value,
+                                      }))
+                                    }
+                                    className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                    required
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                  Focusgebied
+                                  <input
+                                    type="text"
+                                    value={clientForm.focusArea}
+                                    onChange={(event) =>
+                                      setClientForm((form) => ({
+                                        ...form,
+                                        focusArea: event.target.value,
+                                      }))
+                                    }
+                                    className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                  Samenvatting
+                                  <textarea
+                                    value={clientForm.summary}
+                                    onChange={(event) =>
+                                      setClientForm((form) => ({
+                                        ...form,
+                                        summary: event.target.value,
+                                      }))
+                                    }
+                                    rows={4}
+                                    className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                  Doelen (gescheiden door komma)
+                                  <textarea
+                                    value={clientForm.goals}
+                                    onChange={(event) =>
+                                      setClientForm((form) => ({
+                                        ...form,
+                                        goals: event.target.value,
+                                      }))
+                                    }
+                                    rows={3}
+                                    className="rounded-lg border border-slate-300 p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                  Toegewezen coach
+                                  <select
+                                    value={clientForm.coachId}
+                                    onChange={(event) =>
+                                      setClientForm((form) => ({
+                                        ...form,
+                                        coachId: event.target.value,
+                                      }))
+                                    }
+                                    className="rounded-lg border border-slate-300 bg-white p-2 text-sm focus:border-slate-900 focus:outline-none"
+                                    disabled={isCoachOptionsLoading}
+                                  >
+                                    <option value="">Nog niet toegewezen</option>
+                                    {coachOptions.map((coach) => (
+                                      <option key={coach.id} value={coach.id}>
+                                        {coach.name?.trim()
+                                          ? `${coach.name} (${coach.email})`
+                                          : coach.email}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {coachOptionsError ? (
+                                    <span className="text-xs text-rose-600">
+                                      {coachOptionsError}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-slate-500">
+                                      Bepaal welke coach toegang heeft tot dit
+                                      dossier.
+                                    </span>
+                                  )}
+                                </label>
+                                <div className="flex justify-end gap-2 text-sm">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setClientDialogOpen(false);
+                                      setAvatarFile(null);
+                                      setEditingClientId(null);
+                                    }}
+                                    className="rounded-lg border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Annuleren
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={isClientSaving}
+                                    className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                                  >
+                                    {isClientSaving ? "Opslaan..." : "Opslaan"}
+                                  </button>
+                                </div>
+                              </form>
+                            </DialogContent>
+                          </Dialog>
+                        )}
                       </div>
                       <div className="rounded-3xl bg-white p-4">
                         <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-foreground font-semibold">

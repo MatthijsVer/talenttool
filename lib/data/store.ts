@@ -1,4 +1,4 @@
-import type { AgentKind, Prisma } from "@prisma/client";
+import { AgentKind, Prisma, UserRole } from "@prisma/client";
 
 import { DEFAULT_COACH_MODEL, DEFAULT_OVERSEER_MODEL } from "@/lib/agents/models";
 import { prisma } from "@/lib/prisma";
@@ -24,6 +24,7 @@ export interface ClientProfile {
   summary: string;
   goals: string[];
   avatarUrl?: string | null;
+  coachId?: string | null;
 }
 
 export interface ClientDocument {
@@ -78,8 +79,19 @@ async function ensureSession(clientId: string) {
   return session;
 }
 
-export async function getClients(): Promise<ClientProfile[]> {
+export async function getClients(options?: {
+  userId?: string;
+  role?: UserRole;
+}): Promise<ClientProfile[]> {
+  if (options?.role && options.role !== UserRole.ADMIN && !options?.userId) {
+    return [];
+  }
+
   const clients = await prisma.client.findMany({
+    where:
+      options?.role && options.role !== UserRole.ADMIN
+        ? { coachId: options.userId }
+        : undefined,
     include: {
       goals: true,
     },
@@ -88,14 +100,7 @@ export async function getClients(): Promise<ClientProfile[]> {
     },
   });
 
-  return clients.map((client) => ({
-    id: client.id,
-    name: client.name,
-    focusArea: client.focusArea,
-    summary: client.summary,
-    goals: client.goals.map((goal) => goal.value),
-    avatarUrl: client.avatarUrl,
-  }));
+  return clients.map(mapClientProfile);
 }
 
 export async function getClient(clientId: string): Promise<ClientProfile | null> {
@@ -108,14 +113,30 @@ export async function getClient(clientId: string): Promise<ClientProfile | null>
     return null;
   }
 
-  return {
-    id: client.id,
-    name: client.name,
-    focusArea: client.focusArea,
-    summary: client.summary,
-    goals: client.goals.map((goal) => goal.value),
-    avatarUrl: client.avatarUrl,
-  };
+  return mapClientProfile(client);
+}
+
+export async function getClientForUser(
+  clientId: string,
+  userId: string,
+  role: UserRole
+): Promise<ClientProfile | null> {
+  const client = await prisma.client.findFirst({
+    where:
+      role === UserRole.ADMIN
+        ? { id: clientId }
+        : {
+            id: clientId,
+            coachId: userId,
+          },
+    include: { goals: true },
+  });
+
+  if (!client) {
+    return null;
+  }
+
+  return mapClientProfile(client);
 }
 
 export async function getLatestClientReport(
@@ -176,12 +197,14 @@ export async function updateClientProfile(
     focusArea?: string;
     summary?: string;
     goals?: string[];
+    coachId?: string | null;
   }
 ): Promise<ClientProfile> {
   const updateData: Prisma.ClientUpdateInput = {
     ...(data.name ? { name: data.name } : {}),
     ...(data.focusArea ? { focusArea: data.focusArea } : {}),
     ...(data.summary ? { summary: data.summary } : {}),
+    ...(data.coachId !== undefined ? { coachId: data.coachId || null } : {}),
   };
 
   if (data.goals) {
@@ -198,15 +221,7 @@ export async function updateClientProfile(
     data: updateData,
     include: { goals: true },
   });
-
-  return {
-    id: client.id,
-    name: client.name,
-    focusArea: client.focusArea,
-    summary: client.summary,
-    goals: client.goals.map((goal) => goal.value),
-    avatarUrl: client.avatarUrl,
-  };
+  return mapClientProfile(client);
 }
 
 export async function createClient(data: {
@@ -215,6 +230,7 @@ export async function createClient(data: {
   summary?: string;
   goals?: string[];
   avatarUrl?: string | null;
+  coachId?: string | null;
 }): Promise<ClientProfile> {
   const client = await prisma.client.create({
     data: {
@@ -222,6 +238,7 @@ export async function createClient(data: {
       focusArea: data.focusArea?.trim() ?? "",
       summary: data.summary?.trim() ?? "",
       avatarUrl: data.avatarUrl ?? null,
+      coachId: data.coachId ?? null,
       goals: data.goals?.length
         ? {
             create: data.goals
@@ -233,14 +250,7 @@ export async function createClient(data: {
     include: { goals: true },
   });
 
-  return {
-    id: client.id,
-    name: client.name,
-    focusArea: client.focusArea,
-    summary: client.summary,
-    goals: client.goals.map((goal) => goal.value),
-    avatarUrl: client.avatarUrl,
-  };
+  return mapClientProfile(client);
 }
 
 export async function updateClientAvatar(
@@ -253,14 +263,7 @@ export async function updateClientAvatar(
     include: { goals: true },
   });
 
-  return {
-    id: client.id,
-    name: client.name,
-    focusArea: client.focusArea,
-    summary: client.summary,
-    goals: client.goals.map((goal) => goal.value),
-    avatarUrl: client.avatarUrl,
-  };
+  return mapClientProfile(client);
 }
 
 export async function updateUserProfile(
@@ -391,6 +394,22 @@ export async function listClientDigests(): Promise<string[]> {
   );
 
   return digests.filter((digest) => Boolean(digest));
+}
+
+type ClientWithGoals = Prisma.ClientGetPayload<{
+  include: { goals: true };
+}>;
+
+function mapClientProfile(client: ClientWithGoals): ClientProfile {
+  return {
+    id: client.id,
+    name: client.name,
+    focusArea: client.focusArea,
+    summary: client.summary,
+    goals: client.goals.map((goal) => goal.value),
+    avatarUrl: client.avatarUrl,
+    coachId: client.coachId,
+  };
 }
 
 function mapAgentMessage(message: {

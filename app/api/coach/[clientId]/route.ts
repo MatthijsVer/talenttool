@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { UserRole } from "@prisma/client";
 
 import { runCoachAgent } from "@/lib/agents/service";
-import { getSessionWindow } from "@/lib/data/store";
+import { auth } from "@/lib/auth";
+import { getClientForUser, getSessionWindow } from "@/lib/data/store";
 
 interface Params {
   params: Promise<{
@@ -9,8 +11,22 @@ interface Params {
   }>;
 }
 
-export async function GET(_: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
+  const userRole = session.user.role as UserRole;
+  const client = await getClientForUser(clientId, session.user.id, userRole);
+  if (!client) {
+    return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
+  }
+
   const history = await getSessionWindow(clientId, 50);
   if (!history) {
     return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
@@ -20,7 +36,20 @@ export async function GET(_: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
+  const userRole = session.user.role as UserRole;
+  const client = await getClientForUser(clientId, session.user.id, userRole);
+  if (!client) {
+    return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
+  }
 
   try {
     const body = await request.json();

@@ -4,14 +4,16 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 import JSZip from "jszip";
+import type { UserRole } from "@prisma/client";
 
 import { transcribeAudio } from "@/lib/ai/openai";
 import { uploadToBlob } from "@/lib/blob";
 import {
   createClientDocument,
-  getClient,
   getClientDocuments,
+  getClientForUser,
 } from "@/lib/data/store";
+import { auth } from "@/lib/auth";
 
 const DOCUMENT_CONTENT_MAX_CHARS = Number(process.env.DOCUMENT_CONTENT_MAX_CHARS ?? "0");
 
@@ -21,10 +23,22 @@ interface Params {
   }>;
 }
 
-export async function GET(_: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
 
-  const client = await getClient(clientId);
+  const client = await getClientForUser(
+    clientId,
+    session.user.id,
+    session.user.role as UserRole
+  );
   if (!client) {
     return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
   }
@@ -34,8 +48,20 @@ export async function GET(_: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
-  const client = await getClient(clientId);
+  const client = await getClientForUser(
+    clientId,
+    session.user.id,
+    session.user.role as UserRole
+  );
   if (!client) {
     return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
   }

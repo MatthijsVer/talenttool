@@ -144,93 +144,93 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/30 bg-white/70 px-8 backdrop-blur-xl">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Administratie
-          </p>
-          <h1 className="text-lg font-semibold text-slate-900">
-            Gebruikersbeheer
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={fetchOverview}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
-          >
-            <RefreshCw className="size-4" />
-            Vernieuwen
-          </button>
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
-          >
-            Terug naar dashboard
-          </button>
-        </div>
-      </header>
+    <div className="p-4 h-full">
+      <div className="flex h-full rounded-3xl flex-col pt-4 bg-white">
+        <header className="relative z-10 flex rounded-t-3xl h-16 shrink-0 items-center justify-between border-b border-white/30 px-8 backdrop-blur-xl">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Administratie
+            </p>
+            <h1 className="text-lg font-semibold text-slate-900">
+              Gebruikersbeheer
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchOverview}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
+            >
+              <RefreshCw className="size-4" />
+              Vernieuwen
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white"
+            >
+              Terug naar dashboard
+            </button>
+          </div>
+        </header>
 
-      <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6">
-        {error && (
-          <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-full bg-slate-900/10 p-2 text-slate-900">
-                <Users className="size-5" />
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-slate-900/10 p-2 text-slate-900">
+                  <Users className="size-5" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Coaches
+                  </p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {isLoading ? "…" : coachCount}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Coaches
-                </p>
-                <p className="text-2xl font-semibold text-slate-900">
-                  {isLoading ? "…" : coachCount}
-                </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+                  <Shield className="size-5" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Admins
+                  </p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {isLoading ? "…" : adminCount}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
+                  <UserPlus className="size-5" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Openstaande uitnodigingen
+                  </p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {isLoading ? "…" : invites.length}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
-                <Shield className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Admins
-                </p>
-                <p className="text-2xl font-semibold text-slate-900">
-                  {isLoading ? "…" : adminCount}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
-                <UserPlus className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Openstaande uitnodigingen
-                </p>
-                <p className="text-2xl font-semibold text-slate-900">
-                  {isLoading ? "…" : invites.length}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-6 flex flex-col gap-6 lg:flex-row">
-          <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+          <div className="mt-6 flex flex-col gap-3 lg:flex-col bg-[#f1f1f1] p-4 rounded-3xl">
+            <div className="flex items-center w-full justify-between px-2.5">
+              <div className="">
                 <p className="text-sm font-semibold text-slate-900">
                   Actieve gebruikers
                 </p>
@@ -241,201 +241,209 @@ export function AdminUserManagement({ onBack }: AdminUserManagementProps) {
               <button
                 type="button"
                 onClick={() => setInviteDialogOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#222222] px-4 py-2 text-sm text-white hover:bg-slate-800"
               >
                 <UserPlus className="size-4" />
                 Uitnodigen
               </button>
             </div>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100 text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-2">Naam</th>
-                    <th className="px-3 py-2">E-mail</th>
-                    <th className="px-3 py-2">Rol</th>
-                    <th className="px-3 py-2">Aangemaakt</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {isLoading ? (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-3 py-6 text-center text-slate-500"
-                      >
-                        Gebruikers worden geladen...
-                      </td>
-                    </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-3 py-6 text-center text-slate-500"
-                      >
-                        Nog geen gebruikers gevonden.
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((user) => (
-                      <tr key={user.id}>
-                        <td className="px-3 py-2 text-slate-900">
-                          {user.name || "Onbekend"}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {user.email}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              user.role === "ADMIN"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {user.role === "ADMIN" ? "Admin" : "Coach"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-slate-500">
-                          {new Date(user.createdAt).toLocaleDateString("nl-NL", {
+            <div className="w-full rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-sm font-semibold text-slate-900">
+                Verstuurde uitnodigingen
+              </p>
+              <p className="text-xs text-slate-500">
+                Deel de link met de coach om een account te laten aanmaken.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {invites.length === 0 ? (
+                  <li className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    Geen openstaande uitnodigingen.
+                  </li>
+                ) : (
+                  invites.map((invite) => (
+                    <li
+                      key={invite.id}
+                      className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm"
+                    >
+                      <p className="font-medium text-slate-900">
+                        {invite.email}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Verloopt op{" "}
+                        {new Date(invite.expiresAt).toLocaleDateString(
+                          "nl-NL",
+                          {
                             day: "2-digit",
                             month: "short",
                             year: "numeric",
-                          })}
+                          }
+                        )}
+                      </p>
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyLink(invite.inviteUrl, invite.token)
+                          }
+                          className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          {copiedToken === invite.token ? (
+                            <>
+                              <ClipboardCheck className="size-3.5" />
+                              Gekopieerd
+                            </>
+                          ) : (
+                            <>
+                              <ClipboardCopy className="size-3.5" />
+                              Kopieer link
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {invite.createdByName && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Door {invite.createdByName}
+                        </p>
+                      )}
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+            <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className=" overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2">Naam</th>
+                      <th className="px-3 py-2">E-mail</th>
+                      <th className="px-3 py-2">Rol</th>
+                      <th className="px-3 py-2">Aangemaakt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {isLoading ? (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-3 py-6 text-center text-slate-500"
+                        >
+                          Gebruikers worden geladen...
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 lg:w-80">
-            <p className="text-sm font-semibold text-slate-900">
-              Pending invites
-            </p>
-            <p className="text-xs text-slate-500">
-              Deel de link met de coach om een account te laten aanmaken.
-            </p>
-            <ul className="mt-4 space-y-3">
-              {invites.length === 0 ? (
-                <li className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                  Geen openstaande uitnodigingen.
-                </li>
-              ) : (
-                invites.map((invite) => (
-                  <li
-                    key={invite.id}
-                    className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm"
-                  >
-                    <p className="font-medium text-slate-900">{invite.email}</p>
-                    <p className="text-xs text-slate-500">
-                      Verloopt op{" "}
-                      {new Date(invite.expiresAt).toLocaleDateString("nl-NL", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                    <div className="mt-2 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleCopyLink(invite.inviteUrl, invite.token)
-                        }
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                      >
-                        {copiedToken === invite.token ? (
-                          <>
-                            <ClipboardCheck className="size-3.5" />
-                            Gekopieerd
-                          </>
-                        ) : (
-                          <>
-                            <ClipboardCopy className="size-3.5" />
-                            Kopieer link
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    {invite.createdByName && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Door {invite.createdByName}
-                      </p>
+                    ) : users.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-3 py-6 text-center text-slate-500"
+                        >
+                          Nog geen gebruikers gevonden.
+                        </td>
+                      </tr>
+                    ) : (
+                      users.map((user) => (
+                        <tr key={user.id}>
+                          <td className="px-3 py-2 text-slate-900">
+                            {user.name || "Onbekend"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {user.email}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                user.role === "ADMIN"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              {user.role === "ADMIN" ? "Admin" : "Coach"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">
+                            {new Date(user.createdAt).toLocaleDateString(
+                              "nl-NL",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              }
+                            )}
+                          </td>
+                        </tr>
+                      ))
                     )}
-                  </li>
-                ))
-              )}
-            </ul>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <Dialog
-        open={isInviteDialogOpen}
-        onOpenChange={(open) => {
-          setInviteDialogOpen(open);
-          if (!open) {
-            setInviteEmail("");
-            setInviteLink(null);
-            setCreatingInvite(false);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nodig een coach uit</DialogTitle>
-            <DialogDescription>
-              De ontvanger ontvangt een link om een account aan te maken.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleInviteSubmit} className="space-y-4">
-            <label className="block text-sm font-medium text-slate-700">
-              E-mailadres
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
-                placeholder="coach@example.com"
-                required
-              />
-            </label>
-            {inviteLink && (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                <p className="font-semibold">Uitnodiging aangemaakt</p>
-                <p className="break-all text-xs">{inviteLink}</p>
+        <Dialog
+          open={isInviteDialogOpen}
+          onOpenChange={(open) => {
+            setInviteDialogOpen(open);
+            if (!open) {
+              setInviteEmail("");
+              setInviteLink(null);
+              setCreatingInvite(false);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Nodig een coach uit</DialogTitle>
+              <DialogDescription>
+                De ontvanger ontvangt een link om een account aan te maken.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleInviteSubmit} className="space-y-4">
+              <label className="block text-sm font-medium text-slate-700">
+                E-mailadres
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+                  placeholder="coach@example.com"
+                  required
+                />
+              </label>
+              {inviteLink && (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  <p className="font-semibold">Uitnodiging aangemaakt</p>
+                  <p className="break-all text-xs">{inviteLink}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(inviteLink, inviteLink)}
+                    className="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-600 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-white"
+                  >
+                    <ClipboardCopy className="size-3.5" />
+                    Kopieer link
+                  </button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 text-sm">
                 <button
                   type="button"
-                  onClick={() => handleCopyLink(inviteLink, inviteLink)}
-                  className="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-600 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-white"
+                  onClick={closeInviteDialog}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
                 >
-                  <ClipboardCopy className="size-3.5" />
-                  Kopieer link
+                  Annuleren
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingInvite}
+                  className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {isCreatingInvite ? "Versturen..." : "Uitnodigen"}
                 </button>
               </div>
-            )}
-            <div className="flex justify-end gap-2 text-sm">
-              <button
-                type="button"
-                onClick={closeInviteDialog}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-50"
-              >
-                Annuleren
-              </button>
-              <button
-                type="submit"
-                disabled={isCreatingInvite}
-                className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                {isCreatingInvite ? "Versturen..." : "Uitnodigen"}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }

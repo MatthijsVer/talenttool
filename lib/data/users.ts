@@ -195,3 +195,35 @@ export async function markInviteAccepted(inviteId: string, userId: string) {
     },
   });
 }
+
+export async function listCoaches(): Promise<AdminUserSummary[]> {
+  const users = await prisma.user.findMany({
+    where: { role: "COACH" },
+    orderBy: [{ name: "asc" }, { email: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
+  });
+
+  return users.map((user) => ({
+    ...user,
+    createdAt: user.createdAt.toISOString(),
+  }));
+}
+
+export async function isCoachUser(userId: string): Promise<boolean> {
+  if (!userId) {
+    return false;
+  }
+
+  const coach = await prisma.user.findFirst({
+    where: { id: userId, role: "COACH" },
+    select: { id: true },
+  });
+
+  return Boolean(coach);
+}

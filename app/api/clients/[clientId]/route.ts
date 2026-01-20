@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { updateClientAvatar, updateClientProfile } from "@/lib/data/store";
+import { isCoachUser } from "@/lib/data/users";
 
 type RouteContext = {
   params: Promise<{
@@ -37,12 +38,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Ongeldig verzoek" }, { status: 400 });
   }
 
-  const { name, focusArea, summary, goals, avatarUrl } = payload as {
+  const { name, focusArea, summary, goals, avatarUrl, coachId } = payload as {
     name?: string;
     focusArea?: string;
     summary?: string;
     goals?: string[];
     avatarUrl?: string;
+    coachId?: string | null;
   };
 
   if (avatarUrl) {
@@ -50,19 +52,57 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ client });
   }
 
-  if (!name && !focusArea && !summary && !goals) {
+  const hasCoachUpdate = Object.prototype.hasOwnProperty.call(
+    payload,
+    "coachId"
+  );
+
+  let nextCoachId: string | null | undefined = undefined;
+  if (hasCoachUpdate) {
+    if (coachId === null || coachId === "") {
+      nextCoachId = null;
+    } else if (typeof coachId === "string") {
+      const coachExists = await isCoachUser(coachId);
+      if (!coachExists) {
+        return NextResponse.json(
+          { error: "Geselecteerde coach bestaat niet." },
+          { status: 400 }
+        );
+      }
+      nextCoachId = coachId;
+    } else {
+      return NextResponse.json(
+        { error: "Ongeldige coachreferentie" },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (!name && !focusArea && !summary && !goals && !hasCoachUpdate) {
     return NextResponse.json(
       { error: "Geen wijzigingen doorgegeven" },
       { status: 400 }
     );
   }
 
-  const updatedClient = await updateClientProfile(clientId, {
+  const updatePayload: {
+    name?: string;
+    focusArea?: string;
+    summary?: string;
+    goals?: string[];
+    coachId?: string | null;
+  } = {
     name,
     focusArea,
     summary,
     goals,
-  });
+  };
+
+  if (hasCoachUpdate) {
+    updatePayload.coachId = nextCoachId ?? null;
+  }
+
+  const updatedClient = await updateClientProfile(clientId, updatePayload);
 
   return NextResponse.json({ client: updatedClient });
 }

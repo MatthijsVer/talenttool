@@ -21,12 +21,16 @@ model Client {
   avatarUrl String?
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
+  coach     User?              @relation("ClientCoach", fields: [coachId], references: [id], onDelete: SetNull)
+  coachId   String?
 
   sessions  CoachingSession[]
   goals     ClientGoal[]
   documents ClientDocument[]
   directives CoachDirective[]
   reports   ClientReport[]
+
+  @@index([coachId])
 }
 
 model ClientGoal {
@@ -164,6 +168,7 @@ model User {
   sessions Session[]
   accounts Account[]
   feedback AgentFeedback[]
+  coachedClients Client[] @relation("ClientCoach")
   createdInvites  UserInvite[] @relation("UserInviteCreatedBy")
   acceptedInvites UserInvite[] @relation("UserInviteAcceptedBy")
 }

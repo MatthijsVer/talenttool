@@ -30,7 +30,10 @@ export default async function Home() {
     role: normalizedRole,
   } as typeof session.user & { role: UserRole };
 
-  const clients = await getClients();
+  const clients = await getClients({
+    userId: normalizedUser.id,
+    role: normalizedUser.role,
+  });
 
   return <CoachDashboard clients={clients} currentUser={normalizedUser} />;
 }

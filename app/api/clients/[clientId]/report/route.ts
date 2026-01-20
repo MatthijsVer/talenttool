@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { UserRole } from "@prisma/client";
 
 import { generateClientReport } from "@/lib/agents/service";
-import { listClientReports } from "@/lib/data/store";
+import { auth } from "@/lib/auth";
+import { getClientForUser, listClientReports } from "@/lib/data/store";
 
 interface RouteParams {
   params: Promise<{
@@ -10,12 +12,29 @@ interface RouteParams {
 }
 
 export async function GET(request: Request, { params }: RouteParams) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
   if (!clientId) {
     return NextResponse.json(
       { error: "Cliënt ontbreekt." },
       { status: 400 }
     );
+  }
+
+  const client = await getClientForUser(
+    clientId,
+    session.user.id,
+    session.user.role as UserRole
+  );
+  if (!client) {
+    return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
   }
 
   const url = new URL(request.url);
@@ -26,7 +45,15 @@ export async function GET(request: Request, { params }: RouteParams) {
   return NextResponse.json({ reports });
 }
 
-export async function POST(_: Request, { params }: RouteParams) {
+export async function POST(request: Request, { params }: RouteParams) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+  }
+
   const { clientId } = await params;
 
   if (!clientId) {
@@ -34,6 +61,15 @@ export async function POST(_: Request, { params }: RouteParams) {
       { error: "Cliënt ontbreekt." },
       { status: 400 }
     );
+  }
+
+  const client = await getClientForUser(
+    clientId,
+    session.user.id,
+    session.user.role as UserRole
+  );
+  if (!client) {
+    return NextResponse.json({ error: "Cliënt niet gevonden." }, { status: 404 });
   }
 
   try {
