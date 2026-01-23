@@ -168,7 +168,9 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       } | null
     >
   >({});
-  const clientReport = selectedClientId ? clientReports[selectedClientId] ?? null : null;
+  const clientReport = selectedClientId
+    ? clientReports[selectedClientId] ?? null
+    : null;
   const [isReportGenerating, setReportGenerating] = useState(false);
   const [isReportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -228,6 +230,12 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   >(null);
   const [isOverseerPromptLoading, setOverseerPromptLoading] = useState(true);
   const [isOverseerPromptSaving, setOverseerPromptSaving] = useState(false);
+  const [reportPrompt, setReportPrompt] = useState("");
+  const [reportPromptUpdatedAt, setReportPromptUpdatedAt] = useState<
+    string | null
+  >(null);
+  const [isReportPromptLoading, setReportPromptLoading] = useState(true);
+  const [isReportPromptSaving, setReportPromptSaving] = useState(false);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackTarget, setFeedbackTarget] = useState<{
     agentType: AgentKindType;
@@ -596,6 +604,30 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
   }, [isAdmin]);
 
+  const fetchReportPrompt = useCallback(async () => {
+    if (!isAdmin) {
+      setReportPrompt("");
+      setReportPromptUpdatedAt(null);
+      setReportPromptLoading(false);
+      return;
+    }
+    setReportPromptLoading(true);
+    try {
+      const response = await fetch("/api/prompts/report");
+      if (!response.ok) throw new Error("Kan rapportprompt niet laden.");
+      const data = await response.json();
+      setReportPrompt(data.prompt ?? "");
+      setReportPromptUpdatedAt(data.updatedAt ?? null);
+    } catch (fetchError) {
+      console.error(fetchError);
+      setError(
+        (fetchError as Error).message ?? "Rapportprompt laden is mislukt."
+      );
+    } finally {
+      setReportPromptLoading(false);
+    }
+  }, [isAdmin]);
+
   const fetchModelSettings = useCallback(async () => {
     if (!isAdmin) {
       setModelLoading(false);
@@ -689,12 +721,16 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       setOverseerThread([]);
       setOverseerPrompt("");
       setOverseerPromptUpdatedAt(null);
+      setReportPrompt("");
+      setReportPromptUpdatedAt(null);
     }
     void fetchCoachPrompt();
+    void fetchReportPrompt();
     void fetchAiLayers();
     void fetchModelSettings();
   }, [
     fetchCoachPrompt,
+    fetchReportPrompt,
     fetchAiLayers,
     fetchModelSettings,
     fetchOverseerPrompt,
@@ -859,6 +895,40 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       );
     } finally {
       setOverseerPromptSaving(false);
+    }
+  }
+
+  async function handleReportPromptSave(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    if (!reportPrompt.trim()) {
+      setError("Prompt mag niet leeg zijn.");
+      return;
+    }
+
+    setReportPromptSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/prompts/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: reportPrompt }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(data.error ?? "Prompt opslaan is mislukt.");
+
+      setReportPrompt(data.prompt ?? reportPrompt);
+      setReportPromptUpdatedAt(data.updatedAt ?? null);
+    } catch (saveError) {
+      console.error(saveError);
+      setError(
+        (saveError as Error).message ?? "Rapportprompt opslaan is mislukt."
+      );
+    } finally {
+      setReportPromptSaving(false);
     }
   }
 
@@ -1900,8 +1970,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                   {isReportLoading
                     ? "Laden..."
                     : clientReport?.content
-                      ? "Ververs"
-                      : "Laad"}
+                    ? "Ververs"
+                    : "Laad"}
                 </button>
                 {clientReport?.content && (
                   <button
@@ -1935,8 +2005,8 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
               {isReportLoading
                 ? "Rapport wordt geladen..."
                 : clientReport?.content
-                  ? clientReport.content
-                  : "Nog geen rapport geladen. Gebruik de laad- of genereerknop om een rapport te tonen."}
+                ? clientReport.content
+                : "Nog geen rapport geladen. Gebruik de laad- of genereerknop om een rapport te tonen."}
             </div>
           </div>
           <div className="rounded-3xl bg-white p-4">
@@ -2759,6 +2829,54 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                               {isOverseerPromptSaving
                                 ? "Opslaan..."
                                 : "Opslaan"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                      {isReportPromptLoading ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                          Rapportprompt wordt geladen...
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={handleReportPromptSave}
+                          className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                        >
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Rapportgenerator prompt
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  Laatste update:{" "}
+                                  {reportPromptUpdatedAt
+                                    ? new Date(
+                                        reportPromptUpdatedAt
+                                      ).toLocaleString()
+                                    : "Onbekend"}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Bepaalt hoe automatische cliëntrapporten worden
+                              opgebouwd.
+                            </p>
+                          </div>
+                          <textarea
+                            value={reportPrompt}
+                            onChange={(event) =>
+                              setReportPrompt(event.target.value)
+                            }
+                            className="min-h-[250px] w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-slate-400 focus:outline-none"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={isReportPromptSaving}
+                              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                            >
+                              {isReportPromptSaving ? "Opslaan..." : "Opslaan"}
                             </button>
                           </div>
                         </form>

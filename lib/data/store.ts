@@ -73,6 +73,7 @@ export interface AIResponseLayerRecord {
 
 const COACH_PROMPT_ID = "coach-role";
 const OVERSEER_PROMPT_ID = "overseer-role";
+const REPORT_PROMPT_ID = "report-role";
 const COACH_MODEL_SETTING_ID = "coach-model";
 const OVERSEER_MODEL_SETTING_ID = "overseer-model";
 const DOCUMENT_SNIPPET_MAX_CHARS = Number(process.env.DOCUMENT_SNIPPET_MAX_CHARS ?? "0");
@@ -595,6 +596,14 @@ export async function getOverseerPrompt(): Promise<SystemPromptRecord | null> {
 
 export async function updateOverseerPrompt(content: string): Promise<SystemPromptRecord> {
   return upsertPromptRecord(OVERSEER_PROMPT_ID, content);
+}
+
+export async function getReportPrompt(): Promise<SystemPromptRecord | null> {
+  return getPromptRecord(REPORT_PROMPT_ID);
+}
+
+export async function updateReportPrompt(content: string): Promise<SystemPromptRecord> {
+  return upsertPromptRecord(REPORT_PROMPT_ID, content);
 }
 
 export async function getAgentMessageById(

@@ -2,7 +2,11 @@ import { AgentKind } from "@prisma/client";
 
 import { runAgentCompletion } from "@/lib/ai/openai";
 import { applyResponseLayers } from "@/lib/agents/response-layers";
-import { DEFAULT_COACH_ROLE_PROMPT, DEFAULT_OVERSEER_ROLE_PROMPT } from "@/lib/agents/prompts";
+import {
+  DEFAULT_COACH_ROLE_PROMPT,
+  DEFAULT_OVERSEER_ROLE_PROMPT,
+  DEFAULT_REPORT_ROLE_PROMPT,
+} from "@/lib/agents/prompts";
 import {
   getAIModelSettings,
   appendClientMessage,
@@ -11,6 +15,7 @@ import {
   getDocumentSnippets,
   getOverseerPrompt,
   getOverseerThread,
+  getReportPrompt,
   getSessionWindow,
   listClientDigests,
   recordOverseerMessage,
@@ -158,6 +163,8 @@ export async function generateClientReport(clientId: string): Promise<AgentReply
   const history = (await getSessionWindow(clientId, 80)) ?? [];
   const documentSnippets = await getDocumentSnippets(clientId);
   const { coachModel } = await getAIModelSettings();
+  const storedReportPrompt = await getReportPrompt();
+  const baseReportPrompt = storedReportPrompt?.content ?? DEFAULT_REPORT_ROLE_PROMPT;
 
   const goals = client.goals.length ? client.goals.join(", ") : "Geen doelen vastgelegd";
   const docSummary = documentSnippets.length
@@ -165,10 +172,9 @@ export async function generateClientReport(clientId: string): Promise<AgentReply
     : "";
 
   const systemPrompt = [
-    "Je bent een executive coach die heldere rapportages opstelt.",
+    baseReportPrompt,
     `Cliënt: ${client.name}. Focus: ${client.focusArea}. Doelen: ${goals}.`,
     docSummary,
-    "Schrijf een kort rapport (max 180 woorden) in het Nederlands met de onderdelen: Overzicht, Voortgang en Aanbevolen volgende stap. Gebruik gewone zinnen zonder markdown of opsommingen en spreek de coach aan in de jij-vorm.",
   ]
     .filter(Boolean)
     .join("\n\n");
