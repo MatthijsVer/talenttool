@@ -604,7 +604,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
               createdAt?: unknown;
             } => Boolean(entry)
           )
-          .map((entry) => {
+          .map((entry: { id?: unknown; content?: unknown; createdAt?: unknown }) => {
             const parsedId =
               typeof entry.id === "string"
                 ? entry.id
@@ -625,7 +625,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }));
     if (clientId === selectedClientId) {
       setSelectedReportId((current) =>
-        current && reports.some((report) => report.id === current)
+        current &&
+        reports.some(
+          (report: { id: string }) => typeof report.id === "string" && report.id === current
+        )
           ? current
           : reports[0]?.id ?? null
       );

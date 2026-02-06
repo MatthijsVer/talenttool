@@ -4,6 +4,7 @@ import {
   ResponseLayerMode as PrismaResponseLayerMode,
   ResponseLayerTarget as PrismaResponseLayerTarget,
   UserRole,
+  type ClientDocument as PrismaClientDocument,
 } from "@prisma/client";
 
 import { DEFAULT_COACH_MODEL, DEFAULT_OVERSEER_MODEL } from "@/lib/agents/models";
@@ -1090,7 +1091,7 @@ function mapDocument(document: {
 }
 
 function mapDocumentWithClient(
-  document: Prisma.ClientDocument,
+  document: PrismaClientDocument,
 ): ClientDocumentWithClient {
   return {
     ...mapDocument(document),
