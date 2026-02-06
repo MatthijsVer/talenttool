@@ -597,7 +597,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
           )
           .filter(
             (
-              entry
+              entry: unknown
             ): entry is {
               id?: unknown;
               content?: unknown;
