@@ -592,7 +592,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     }
     const reports = Array.isArray(data.reports)
       ? data.reports
-          .map((entry) =>
+          .map((entry: unknown) =>
             typeof entry === "object" && entry !== null ? entry : null
           )
           .filter(
