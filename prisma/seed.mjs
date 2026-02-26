@@ -27,39 +27,48 @@ async function main() {
     },
   });
 
-  const adminUser = await prisma.user.upsert({
-    where: { email: 'matthijs@admin.nl' },
-    update: {
-      name: 'Matthijs Admin',
-      role: 'ADMIN',
-    },
-    create: {
-      name: 'Matthijs Admin',
-      email: 'matthijs@admin.nl',
-      role: 'ADMIN',
-      emailVerified: true,
-    },
-  });
-
   const adminPasswordHash = await hashPassword('admin123');
-  await prisma.account.upsert({
-    where: {
-      providerId_accountId: {
+  const adminSeeds = [
+    { email: 'matthijs@admin.nl', name: 'Matthijs Admin' },
+    { email: 'cecile@admin.nl', name: 'Cecile Admin' },
+    { email: 'maarten@admin.nl', name: 'Maarten Admin' },
+  ];
+
+  for (const admin of adminSeeds) {
+    const adminUser = await prisma.user.upsert({
+      where: { email: admin.email },
+      update: {
+        name: admin.name,
+        role: 'ADMIN',
+        emailVerified: true,
+      },
+      create: {
+        name: admin.name,
+        email: admin.email,
+        role: 'ADMIN',
+        emailVerified: true,
+      },
+    });
+
+    await prisma.account.upsert({
+      where: {
+        providerId_accountId: {
+          providerId: 'credential',
+          accountId: adminUser.id,
+        },
+      },
+      update: {
+        userId: adminUser.id,
+        password: adminPasswordHash,
+      },
+      create: {
+        userId: adminUser.id,
         providerId: 'credential',
         accountId: adminUser.id,
+        password: adminPasswordHash,
       },
-    },
-    update: {
-      userId: adminUser.id,
-      password: adminPasswordHash,
-    },
-    create: {
-      userId: adminUser.id,
-      providerId: 'credential',
-      accountId: adminUser.id,
-      password: adminPasswordHash,
-    },
-  });
+    });
+  }
 
   // Clients aanmaken
   console.log('👥 Clients aanmaken...');

@@ -8,7 +8,28 @@ if (!process.env.AUTH_SECRET) {
   throw new Error("AUTH_SECRET is required for authentication to work.");
 }
 
+function getAuthBaseUrl() {
+  const configured =
+    process.env.BETTER_AUTH_URL ??
+    process.env.VERCEL_URL ??
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env.APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.NEXT_PUBLIC_SITE_URL;
+
+  if (!configured) {
+    return "http://localhost:3000";
+  }
+
+  if (configured.startsWith("http://") || configured.startsWith("https://")) {
+    return configured.replace(/\/$/, "");
+  }
+
+  return `https://${configured.replace(/\/$/, "")}`;
+}
+
 export const auth = betterAuth({
+  baseURL: getAuthBaseUrl(),
   secret: process.env.AUTH_SECRET,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   user: {
