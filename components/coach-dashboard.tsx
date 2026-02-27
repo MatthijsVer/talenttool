@@ -2529,7 +2529,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                 disabled={!selectedClient}
                 aria-label="Auto-send after transcription"
               />
-              <span>Auto-send after transcription</span>
+              <span>Verzend na transcriptie</span>
             </label>
           </div>
           <div className="rounded-3xl bg-white p-5 space-y-4">
