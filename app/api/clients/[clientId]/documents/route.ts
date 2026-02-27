@@ -1,20 +1,14 @@
-import { unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import { NextResponse } from "next/server";
-import JSZip from "jszip";
 
-import { transcribeAudio } from "@/lib/ai/openai";
 import { uploadToBlob } from "@/lib/blob";
 import { assertCanAccessClient, ForbiddenError } from "@/lib/authz";
 import {
   createClientDocument,
   getClientDocuments,
 } from "@/lib/data/store";
+import { extractDocumentContent } from "@/lib/documents/extract";
+import { getRequestId, logError, logInfo } from "@/lib/observability";
 import { auth } from "@/lib/auth";
-
-const DOCUMENT_CONTENT_MAX_CHARS = Number(process.env.DOCUMENT_CONTENT_MAX_CHARS ?? "0");
 
 interface Params {
   params: Promise<{
@@ -22,14 +16,29 @@ interface Params {
   }>;
 }
 
+function jsonWithRequestId(
+  requestId: string,
+  body: unknown,
+  init?: ResponseInit,
+) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("x-request-id", requestId);
+  return response;
+}
+
 export async function GET(request: Request, { params }: Params) {
+  const requestId = getRequestId(request);
   const cookie = request.headers.get("cookie") ?? "";
   const session = await auth.api.getSession({
     headers: { cookie },
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    return jsonWithRequestId(
+      requestId,
+      { error: "Niet geautoriseerd" },
+      { status: 401 },
+    );
   }
 
   const { clientId } = await params;
@@ -41,23 +50,30 @@ export async function GET(request: Request, { params }: Params) {
     );
   } catch (error) {
     if (error instanceof ForbiddenError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
+      return jsonWithRequestId(requestId, { error: error.message }, { status: 403 });
     }
     throw error;
   }
 
   const documents = await getClientDocuments(clientId);
-  return NextResponse.json({ documents });
+  return jsonWithRequestId(requestId, { documents });
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const requestId = getRequestId(request);
+  const route = "/api/clients/[clientId]/documents";
+  const startedAt = Date.now();
   const cookie = request.headers.get("cookie") ?? "";
   const session = await auth.api.getSession({
     headers: { cookie },
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    return jsonWithRequestId(
+      requestId,
+      { error: "Niet geautoriseerd" },
+      { status: 401 },
+    );
   }
 
   const { clientId } = await params;
@@ -65,11 +81,11 @@ export async function POST(request: Request, { params }: Params) {
     await assertCanAccessClient(
       { id: session.user.id, role: session.user.role },
       clientId,
-      { route: "/api/clients/[clientId]/documents", clientId },
+      { requestId, route, clientId },
     );
   } catch (error) {
     if (error instanceof ForbiddenError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
+      return jsonWithRequestId(requestId, { error: error.message }, { status: 403 });
     }
     throw error;
   }
@@ -78,12 +94,30 @@ export async function POST(request: Request, { params }: Params) {
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Bestand is verplicht." }, { status: 400 });
+    return jsonWithRequestId(
+      requestId,
+      { error: "Bestand is verplicht." },
+      { status: 400 },
+    );
   }
 
   if (file.size === 0) {
-    return NextResponse.json({ error: "Bestand is leeg." }, { status: 400 });
+    return jsonWithRequestId(
+      requestId,
+      { error: "Bestand is leeg." },
+      { status: 400 },
+    );
   }
+
+  logInfo("documents.upload.start", {
+    requestId,
+    route,
+    userId: session.user.id,
+    clientId,
+    filename: file.name,
+    mimeType: file.type || "application/octet-stream",
+    bytes: file.size,
+  });
 
   const storedName = `${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
   const blobKey = `${clientId}/${storedName}`;
@@ -91,29 +125,12 @@ export async function POST(request: Request, { params }: Params) {
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  const isAudio = isAudioFile(file.name, file.type);
-  const isDocx = isDocxFile(file.name, file.type);
-  let content: string | undefined;
-  let audioDuration: number | undefined;
-
-  if (isAudio) {
-    const tempPath = path.join(os.tmpdir(), storedName);
-    await writeFile(tempPath, buffer);
-    try {
-      const transcription = await transcribeAudio(tempPath, file.type);
-      content = trimContent(transcription.text?.trim() || undefined);
-      audioDuration = transcription.duration;
-    } catch (error) {
-      console.error("Audio transcription failed", error);
-    } finally {
-      await unlink(tempPath).catch(() => undefined);
-    }
-  } else if (isDocx) {
-    const extracted = await extractDocxText(buffer);
-    content = trimContent(extracted);
-  } else if (shouldStoreContent(file.type, file.name)) {
-    content = trimContent(buffer.toString("utf-8"));
-  }
+  const extraction = await extractDocumentContent({
+    buffer,
+    fileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    requestId,
+  });
 
   try {
     const blob = await uploadToBlob(
@@ -128,79 +145,46 @@ export async function POST(request: Request, { params }: Params) {
       storedName: blob.url,
       mimeType: file.type || "application/octet-stream",
       size: file.size,
-      content,
-      kind: isAudio ? "AUDIO" : "TEXT",
-      audioDuration,
+      content: extraction.content,
+      kind: extraction.kind,
+      audioDuration: extraction.audioDuration,
+      extractionStatus: extraction.extractionStatus,
+      extractionError: extraction.extractionError ?? null,
+      extractedAt: extraction.extractedAt,
     });
   } catch (error) {
-    console.error("Blob upload failed", error);
-    return NextResponse.json(
+    const durationMs = Date.now() - startedAt;
+    logError("documents.upload.error", {
+      requestId,
+      route,
+      userId: session.user.id,
+      clientId,
+      filename: file.name,
+      bytes: file.size,
+      durationMs,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return jsonWithRequestId(
+      requestId,
       { error: "Uploaden is mislukt. Controleer blob-configuratie." },
       { status: 500 },
     );
   }
 
   const documents = await getClientDocuments(clientId);
-  return NextResponse.json({ documents });
-}
-
-async function extractDocxText(buffer: Buffer) {
-  try {
-    const zip = await JSZip.loadAsync(buffer);
-    const mainDocument = zip.file("word/document.xml");
-    if (!mainDocument) {
-      return undefined;
-    }
-    const xml = await mainDocument.async("text");
-    return normalizeDocxText(xml);
-  } catch (error) {
-    console.error("DOCX extraction failed", error);
-    return undefined;
-  }
-}
-
-function normalizeDocxText(xml: string) {
-  return xml
-    .replace(/<\/w:p>/g, "\n")
-    .replace(/<w:br\s*\/>/g, "\n")
-    .replace(/<w:tab[^>]*\/>/g, "\t")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function trimContent(input?: string) {
-  if (!input) {
-    return undefined;
-  }
-  if (DOCUMENT_CONTENT_MAX_CHARS > 0) {
-    return input.slice(0, DOCUMENT_CONTENT_MAX_CHARS);
-  }
-  return input;
-}
-
-function shouldStoreContent(mimeType: string, fileName: string) {
-  if (mimeType?.startsWith("text/") || mimeType === "application/json") {
-    return true;
-  }
-  return /\.(md|txt|json|csv)$/i.test(fileName);
-}
-
-function isDocxFile(fileName: string, mimeType?: string) {
-  if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    return true;
-  }
-  return /\.docx$/i.test(fileName);
-}
-
-function isAudioFile(fileName: string, mimeType?: string) {
-  if (mimeType?.startsWith("audio/")) {
-    return true;
-  }
-  return /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+  const durationMs = Date.now() - startedAt;
+  logInfo("documents.upload.end", {
+    requestId,
+    route,
+    userId: session.user.id,
+    clientId,
+    filename: file.name,
+    bytes: file.size,
+    extractionStatus: extraction.extractionStatus,
+    extractionError: extraction.extractionError ?? null,
+    extractedChars: extraction.content?.length ?? 0,
+    status: 200,
+    durationMs,
+  });
+  return jsonWithRequestId(requestId, { documents });
 }

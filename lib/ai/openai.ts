@@ -383,6 +383,97 @@ export async function transcribeAudio(
   }
 }
 
+export async function extractPdfTextFromBuffer(
+  buffer: Buffer,
+  options?: {
+    requestId?: string;
+    fileName?: string;
+    timeoutMs?: number;
+  },
+): Promise<string> {
+  const client = getOpenAIClient();
+  const model = process.env.OPENAI_PDF_EXTRACT_MODEL ?? "gpt-4o-mini";
+  const timeoutMs = resolveTimeoutMs(options?.timeoutMs);
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  logInfo("openai.start", {
+    requestId: options?.requestId ?? null,
+    operation: "extract-pdf",
+    model,
+    timeoutMs,
+    inputBytes: buffer.byteLength,
+  });
+
+  try {
+    await maybeStall(controller.signal);
+    const fileData = `data:application/pdf;base64,${buffer.toString("base64")}`;
+    const response = await client.responses.create(
+      {
+        model,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Extract all readable text from this PDF as plain UTF-8 text. Preserve wording and line breaks where possible. Do not summarize.",
+              },
+              {
+                type: "input_file",
+                filename: options?.fileName ?? "document.pdf",
+                file_data: fileData,
+              },
+            ],
+          },
+        ],
+      } as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
+      {
+        signal: controller.signal,
+      },
+    );
+
+    const outputText = extractText(response);
+    const durationMs = Date.now() - startedAt;
+    logInfo("openai.success", {
+      requestId: options?.requestId ?? null,
+      operation: "extract-pdf",
+      model,
+      durationMs,
+      outputCharCount: outputText.length,
+    });
+
+    return outputText;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    if (controller.signal.aborted) {
+      const timeoutError = new OpenAITimeoutError(timeoutMs, "extract-pdf");
+      logError("openai.timeout", {
+        requestId: options?.requestId ?? null,
+        operation: "extract-pdf",
+        model,
+        timeoutMs,
+        durationMs,
+      });
+      throw timeoutError;
+    }
+
+    logError("openai.error", {
+      requestId: options?.requestId ?? null,
+      operation: "extract-pdf",
+      model,
+      durationMs,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function maybeStall(signal: AbortSignal) {
   if (!Number.isFinite(OPENAI_STALL_MS) || OPENAI_STALL_MS <= 0) {
     return;

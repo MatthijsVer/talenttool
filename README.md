@@ -28,6 +28,10 @@ Add a `.env` (and configure the same variables in Vercel) with at least:
 DATABASE_URL=postgres://...
 OPENAI_API_KEY=...
 BLOB_READ_WRITE_TOKEN=...
+OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+OPENAI_TRANSCRIBE_TIMEOUT_MS=45000
+TRANSCRIBE_MAX_BYTES=10000000
+TRANSCRIBE_MAX_SECONDS=60
 ```
 
 The blob token is needed for persistent document uploads. Create a Vercel Blob store and copy the read/write token.
@@ -105,3 +109,33 @@ LIMIT 5;
 4. Login as Coach A and call `POST /api/coach/{coachBClientId}` (or `/stream`); confirm `403`.
 5. Login as Coach A and call `GET /api/clients/{coachAClientId}/documents`; confirm `200`.
 6. Login as Admin and repeat steps 2-4 with the same client IDs; confirm `200`.
+
+## Document context verification
+
+1. Upload a PDF to Client A via `POST /api/clients/{clientId}/documents`.
+2. Ask coach chat a question that includes a phrase from that PDF.
+3. Confirm answer references the phrase and server logs include `doc_context.selected` with:
+   - `clientId` of Client A
+   - `selectedChunkCount > 0`
+   - `totalChars <= DOCUMENT_CONTEXT_BUDGET_CHARS` (or route-specific budget)
+4. Set `DEBUG_DOC_CONTEXT=1` and send a coach message:
+   - blocking route returns `documentContextSources`
+   - stream route `done` event includes `documentContextSources`
+5. As Coach B, call `GET /api/clients/{clientAId}/documents`; confirm `403`.
+6. Reprocess a document with `POST /api/clients/{clientId}/documents/{documentId}` and confirm extraction metadata updates.
+7. Optional DB checks:
+
+```sql
+SELECT "id", "clientId", "originalName", "extractionStatus", "extractedAt"
+FROM "ClientDocument"
+ORDER BY "createdAt" DESC
+LIMIT 20;
+```
+
+```sql
+SELECT "clientId", "documentId", COUNT(*) AS chunk_count
+FROM "DocumentChunk"
+GROUP BY "clientId", "documentId"
+ORDER BY chunk_count DESC
+LIMIT 20;
+```

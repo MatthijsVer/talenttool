@@ -27,6 +27,7 @@ model Client {
   sessions  CoachingSession[]
   goals     ClientGoal[]
   documents ClientDocument[]
+  documentChunks DocumentChunk[]
   directives CoachDirective[]
   reports   ClientReport[]
   overseerMessages OverseerMessage[]
@@ -105,10 +106,30 @@ model ClientDocument {
   size           Int
   kind           DocumentKind @default(TEXT)
   content        String?      @db.Text
+  extractionStatus DocumentExtractionStatus @default(PENDING)
+  extractionError  String?     @db.Text
+  extractedAt      DateTime?
   audioDuration  Float?
   createdAt      DateTime     @default(now())
 
+  chunks         DocumentChunk[]
+
   @@index([clientId])
+}
+
+model DocumentChunk {
+  id         String         @id @default(cuid())
+  document   ClientDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String
+  client     Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId   String
+  chunkIndex Int
+  text       String         @db.Text
+  createdAt  DateTime       @default(now())
+
+  @@unique([documentId, chunkIndex])
+  @@index([clientId, createdAt])
+  @@index([documentId])
 }
 enum MessageSource {
   AI
@@ -118,6 +139,12 @@ enum MessageSource {
 enum DocumentKind {
   TEXT
   AUDIO
+}
+
+enum DocumentExtractionStatus {
+  PENDING
+  READY
+  FAILED
 }
 
 enum AgentKind {

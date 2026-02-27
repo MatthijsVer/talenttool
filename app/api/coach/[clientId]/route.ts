@@ -18,6 +18,8 @@ interface Params {
   }>;
 }
 
+const DEBUG_DOC_CONTEXT = process.env.DEBUG_DOC_CONTEXT === "1";
+
 function jsonWithRequestId(
   requestId: string,
   body: unknown,
@@ -227,6 +229,7 @@ export async function POST(request: Request, { params }: Params) {
         userMessage: message,
         requestId,
         userId: session.user.id,
+        role: session.user.role,
         conversationId,
       }),
     );
@@ -254,6 +257,11 @@ export async function POST(request: Request, { params }: Params) {
       responseId: result.responseId,
       usage: result.usage,
       history: updatedHistory,
+      ...(DEBUG_DOC_CONTEXT
+        ? {
+            documentContextSources: result.documentContextSources ?? [],
+          }
+        : {}),
     });
   } catch (error) {
     const durationMs = Date.now() - startedAt;

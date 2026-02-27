@@ -35,6 +35,7 @@ import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
 import { AdminUserManagement } from "@/components/admin/user-management";
+import { VoiceRecorder } from "@/components/chat/voice-recorder";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 import type {
   AgentMessage,
@@ -186,6 +188,11 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     useState<ClientPendingState>({});
   const [coachLastRequestIdByClientId, setCoachLastRequestIdByClientId] =
     useState<ClientRequestState>({});
+  const [queuedTranscriptByClientId, setQueuedTranscriptByClientId] = useState<
+    Record<string, string>
+  >({});
+  const [autoSendAfterTranscription, setAutoSendAfterTranscription] =
+    useState(false);
   const [isOverseerLoading, setOverseerLoading] = useState(false);
   const [isDocUploading, setDocUploading] = useState(false);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(
@@ -321,6 +328,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   const newClientAvatarInputId = useId();
   const userAvatarInputId = useId();
   const activeCoachRequestsRef = useRef<Record<string, ActiveCoachRequest>>({});
+  const queuedTranscriptByClientIdRef = useRef<Record<string, string>>({});
   const isAdmin = displayUser.role === "ADMIN";
   const userInitial = displayUser.name?.charAt(0).toUpperCase() ?? "C";
   const settingsSections = useMemo<
@@ -408,6 +416,24 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
   }, [currentUser]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const stored = window.localStorage.getItem("autoSendAfterTranscription");
+    setAutoSendAfterTranscription(stored === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      "autoSendAfterTranscription",
+      autoSendAfterTranscription ? "1" : "0"
+    );
+  }, [autoSendAfterTranscription]);
+
+  useEffect(() => {
     if (!isAdmin && activeSidebarTab !== "dashboard") {
       setActiveSidebarTab("dashboard");
     }
@@ -489,6 +515,33 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     },
     []
   );
+
+  const queueTranscriptForClient = useCallback(
+    (clientId: string, transcript: string) => {
+      const existing = queuedTranscriptByClientIdRef.current[clientId];
+      const nextQueue = {
+        ...queuedTranscriptByClientIdRef.current,
+        [clientId]: existing
+          ? `${existing.trim()} ${transcript.trim()}`
+          : transcript.trim(),
+      };
+      queuedTranscriptByClientIdRef.current = nextQueue;
+      setQueuedTranscriptByClientId(nextQueue);
+    },
+    []
+  );
+
+  const popQueuedTranscriptForClient = useCallback((clientId: string) => {
+    const queued = queuedTranscriptByClientIdRef.current[clientId];
+    if (!queued) {
+      return null;
+    }
+    const nextQueue = { ...queuedTranscriptByClientIdRef.current };
+    delete nextQueue[clientId];
+    queuedTranscriptByClientIdRef.current = nextQueue;
+    setQueuedTranscriptByClientId(nextQueue);
+    return queued;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -864,12 +917,85 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     []
   );
 
-  async function handleCoachSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedClientId || !coachInput.trim()) return;
+  const handleVoiceTranscript = useCallback(
+    (text: string) => {
+      const transcript = text.trim();
+      if (!transcript) {
+        return;
+      }
 
-    const clientId = selectedClientId;
-    const trimmedMessage = coachInput.trim();
+      const clientId = selectedClientId;
+      if (!clientId) {
+        setCoachInput((previous) => {
+          if (!previous.trim()) {
+            return transcript;
+          }
+          return `${previous.trimEnd()} ${transcript}`;
+        });
+        return;
+      }
+
+      if (!autoSendAfterTranscription) {
+        setCoachInput((previous) => {
+          if (!previous.trim()) {
+            return transcript;
+          }
+          return `${previous.trimEnd()} ${transcript}`;
+        });
+        return;
+      }
+
+      if (coachPendingByClientId[clientId]) {
+        queueTranscriptForClient(clientId, transcript);
+        toast("Transcript in wachtrij geplaatst.");
+        return;
+      }
+
+      void handleCoachSubmit(null, {
+        clientId,
+        message: transcript,
+        clearInput: false,
+        restoreInputOnError: false,
+      });
+    },
+    [
+      autoSendAfterTranscription,
+      coachPendingByClientId,
+      handleCoachSubmit,
+      queueTranscriptForClient,
+      selectedClientId,
+    ]
+  );
+
+  const handleVoiceError = useCallback(
+    (err: { message: string; requestId?: string }) => {
+      const message =
+        err.requestId && !err.message.includes("requestId:")
+          ? `${err.message} (requestId: ${err.requestId})`
+          : err.message;
+      setError(message);
+      toast.error(message);
+    },
+    []
+  );
+
+  async function handleCoachSubmit(
+    event: React.FormEvent<HTMLFormElement> | null,
+    options?: {
+      clientId?: string | null;
+      message?: string;
+      clearInput?: boolean;
+      restoreInputOnError?: boolean;
+    }
+  ) {
+    event?.preventDefault();
+    const clientId = options?.clientId ?? selectedClientId;
+    const trimmedMessage = (options?.message ?? coachInput).trim();
+    if (!clientId || !trimmedMessage) return;
+
+    const shouldClearInput = options?.clearInput ?? true;
+    const shouldRestoreInputOnError =
+      options?.restoreInputOnError ?? shouldClearInput;
     const userTempId = `temp-user-${Date.now()}`;
     const assistantTempId = `${userTempId}-assistant`;
     const timestamp = new Date().toISOString();
@@ -895,7 +1021,9 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       assistantTempId,
     };
 
-    setCoachInput("");
+    if (shouldClearInput) {
+      setCoachInput("");
+    }
     setCoachPendingByClientId((prev) => ({
       ...prev,
       [clientId]: true,
@@ -1179,7 +1307,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
 
         console.error(sendError);
         removeCoachTempMessages(clientId, userTempId, assistantTempId);
-        if (selectedClientId === clientId) {
+        if (shouldRestoreInputOnError && selectedClientId === clientId) {
           setCoachInput(trimmedMessage);
         }
 
@@ -1199,6 +1327,16 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
       }
       delete activeCoachRequestsRef.current[clientId];
       clearCoachPendingState(clientId);
+
+      const queuedTranscript = popQueuedTranscriptForClient(clientId);
+      if (queuedTranscript && queuedTranscript.trim().length > 0) {
+        void handleCoachSubmit(null, {
+          clientId,
+          message: queuedTranscript,
+          clearInput: false,
+          restoreInputOnError: false,
+        });
+      }
     }
   }
 
@@ -2382,6 +2520,17 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                 </DialogContent>
               </Dialog>
             )}
+          </div>
+          <div className="rounded-3xl bg-white p-4 space-y-0 flex items-center justify-center w-full">
+            <label className="inline-flex items-center w-full gap-2 pl-1 text-[11px] text-slate-500">
+              <Switch
+                checked={autoSendAfterTranscription}
+                onCheckedChange={setAutoSendAfterTranscription}
+                disabled={!selectedClient}
+                aria-label="Auto-send after transcription"
+              />
+              <span>Auto-send after transcription</span>
+            </label>
           </div>
           <div className="rounded-3xl bg-white p-5 space-y-4">
             <div className="flex items-center justify-between gap-4">
@@ -3827,6 +3976,10 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                     , requestId=
                                     {coachLastRequestIdByClientId[client.id] ??
                                       "-"}
+                                    , queued=
+                                    {queuedTranscriptByClientId[client.id]
+                                      ? "yes"
+                                      : "no"}
                                   </p>
                                 ))}
                               </div>
@@ -3884,6 +4037,15 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
                                 >
                                   <ArrowUp className="size-4" />
                                 </button>
+                                <VoiceRecorder
+                                  disabled={
+                                    !selectedClient ||
+                                    isSelectedClientCoachPending
+                                  }
+                                  languageHint="nl"
+                                  onTranscript={handleVoiceTranscript}
+                                  onError={handleVoiceError}
+                                />
                               </div>
                             </div>
                             <input

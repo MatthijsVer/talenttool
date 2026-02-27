@@ -13,6 +13,8 @@ interface RouteParams {
   }>;
 }
 
+const DEBUG_DOC_CONTEXT = process.env.DEBUG_DOC_CONTEXT === "1";
+
 function jsonWithRequestId(
   requestId: string,
   body: unknown,
@@ -217,6 +219,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       clientId,
       requestId,
       userId: session.user.id,
+      role: session.user.role,
     });
     const durationMs = Date.now() - startedAt;
     logInfo("api.client-report.post.end", {
@@ -241,6 +244,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       usage: result.usage ?? null,
       reportId: result.reportId,
       createdAt: result.createdAt,
+      ...(DEBUG_DOC_CONTEXT
+        ? {
+            documentContextSources: result.documentContextSources ?? [],
+          }
+        : {}),
     });
   } catch (error) {
     const durationMs = Date.now() - startedAt;

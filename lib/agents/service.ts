@@ -1,4 +1,4 @@
-import { AgentKind } from "@prisma/client";
+import { AgentKind, UserRole } from "@prisma/client";
 
 import { runAgentCompletion } from "@/lib/ai/openai";
 import { applyResponseLayers } from "@/lib/agents/response-layers";
@@ -13,13 +13,14 @@ import {
   appendClientMessage,
   getClient,
   getCoachPrompt,
-  getDocumentSnippets,
+  getClientDocumentContext,
   getLatestClientReport,
   getOverseerWindow,
   getOverseerPrompt,
   getReportPrompt,
   getSessionWindow,
   listClientDigestsForCoach,
+  type DocumentContextSource,
   type OverseerMessageContext,
   saveClientReport,
   type AgentRole,
@@ -28,6 +29,17 @@ import {
 import { logError, logInfo, withTimer } from "@/lib/observability";
 
 type ChatRole = "user" | "assistant" | "system";
+
+const COACH_DOCUMENT_CONTEXT_BUDGET_CHARS = Number(
+  process.env.COACH_DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    process.env.DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    "6000",
+);
+const REPORT_DOCUMENT_CONTEXT_BUDGET_CHARS = Number(
+  process.env.REPORT_DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    process.env.DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    "8000",
+);
 
 function normalizeRole(role: string): ChatRole {
   if (role === "assistant" || role === "system") {
@@ -46,16 +58,19 @@ export interface AgentReply {
   };
   reportId?: string;
   createdAt?: string;
+  documentContextSources?: DocumentContextSource[];
 }
 
 interface AgentRunContext {
   requestId?: string;
   userId?: string;
+  role?: UserRole | string;
   conversationId?: string;
 }
 
 interface ScopedAgentRunContext extends AgentRunContext {
   userId: string;
+  role: UserRole | string;
 }
 
 export async function runCoachAgent(
@@ -64,7 +79,8 @@ export async function runCoachAgent(
     userMessage: string;
   } & ScopedAgentRunContext,
 ): Promise<AgentReply> {
-  const { clientId, userMessage, requestId, userId, conversationId } = options;
+  const { clientId, userMessage, requestId, userId, role, conversationId } =
+    options;
 
   logInfo("agent.coach.start", {
     requestId: requestId ?? null,
@@ -91,14 +107,25 @@ export async function runCoachAgent(
       );
 
       const history = (await getSessionWindow(userId, clientId)) ?? [];
-      const documentSnippets = await getDocumentSnippets(clientId);
+      const documentContext = await getClientDocumentContext({
+        userId,
+        role,
+        clientId,
+        queryText: userMessage,
+        budgetChars: COACH_DOCUMENT_CONTEXT_BUDGET_CHARS,
+        requestId,
+      });
       const storedPrompt = await getCoachPrompt();
       const coachPrompt = storedPrompt?.content ?? DEFAULT_COACH_ROLE_PROMPT;
       const { coachModel } = await getAIModelSettings();
       const messages = [
         {
           role: "system" as const,
-          content: buildCoachSystemPrompt(coachPrompt, client, documentSnippets),
+          content: buildCoachSystemPrompt(
+            coachPrompt,
+            client,
+            documentContext.contextText,
+          ),
         },
         ...history.map((message) => ({
           role: normalizeRole(message.role),
@@ -119,7 +146,9 @@ export async function runCoachAgent(
         context: {
           latestUserMessage: userMessage,
           client,
-          documentSnippets,
+          documentSnippets: documentContext.contextText
+            ? [documentContext.contextText]
+            : [],
         },
         requestId,
       });
@@ -141,6 +170,7 @@ export async function runCoachAgent(
         reply: layered.reply,
         responseId: completion.responseId,
         usage: completion.usage,
+        documentContextSources: documentContext.sources,
       };
     });
 
@@ -152,6 +182,7 @@ export async function runCoachAgent(
       durationMs,
       responseId: result.responseId,
       replyLength: result.reply.length,
+      documentContextChunkCount: result.documentContextSources?.length ?? 0,
       totalTokens: result.usage?.totalTokens,
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
@@ -283,7 +314,7 @@ export async function generateClientReport(
     clientId: string;
   } & ScopedAgentRunContext,
 ): Promise<AgentReply> {
-  const { clientId, requestId, userId, conversationId } = options;
+  const { clientId, requestId, userId, role, conversationId } = options;
 
   logInfo("agent.report.start", {
     requestId: requestId ?? null,
@@ -300,15 +331,23 @@ export async function generateClientReport(
       }
 
       const history = (await getSessionWindow(userId, clientId, 80)) ?? [];
-      const documentSnippets = await getDocumentSnippets(clientId);
+      const reportQueryText = buildReportDocumentQuery(client, history);
+      const documentContext = await getClientDocumentContext({
+        userId,
+        role,
+        clientId,
+        queryText: reportQueryText,
+        budgetChars: REPORT_DOCUMENT_CONTEXT_BUDGET_CHARS,
+        requestId,
+      });
       const previousReport = await getLatestClientReport(clientId);
       const { coachModel } = await getAIModelSettings();
       const storedReportPrompt = await getReportPrompt();
       const baseReportPrompt = storedReportPrompt?.content ?? DEFAULT_REPORT_ROLE_PROMPT;
 
       const goals = client.goals.length ? client.goals.join(", ") : "Geen doelen vastgelegd";
-      const docSummary = documentSnippets.length
-        ? `Samenvatting documenten:\n${documentSnippets.join("\n\n")}`
+      const docSummary = documentContext.contextText
+        ? buildDocumentContextSection(documentContext.contextText)
         : "";
       const versioningGuidance = previousReport
         ? "Je werkt met een bestaand rapport. Houd vast wat nog klopt, maar benadruk nieuwe inzichten en voortgang. Noteer duidelijk wat er veranderd is ten opzichte van de vorige versie."
@@ -380,6 +419,7 @@ export async function generateClientReport(
         usage: completion.usage,
         reportId: savedReport.id,
         createdAt: savedReport.createdAt,
+        documentContextSources: documentContext.sources,
       };
     });
 
@@ -392,6 +432,7 @@ export async function generateClientReport(
       responseId: result.responseId,
       replyLength: result.reply.length,
       reportId: result.reportId ?? null,
+      documentContextChunkCount: result.documentContextSources?.length ?? 0,
       totalTokens: result.usage?.totalTokens,
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
@@ -413,13 +454,10 @@ export async function generateClientReport(
 function buildCoachSystemPrompt(
   basePrompt: string,
   client: ClientProfile,
-  documentSnippets: string[],
+  documentContextText: string,
 ) {
   const goals = client.goals.length ? client.goals.join("; ") : "Nog geen doelen vastgelegd";
-  const docText =
-    documentSnippets.length > 0
-      ? `Extra context uit documenten:\n${documentSnippets.join("\n\n")}`
-      : "";
+  const docText = buildDocumentContextSection(documentContextText);
   return [
     basePrompt,
     `Cliënt: ${client.name}. Focus: ${client.focusArea}. Samenvatting: ${client.summary}. Doelen: ${goals}.`,
@@ -432,4 +470,40 @@ function buildCoachSystemPrompt(
 function formatMessageForAgent(message: { source: string; role: AgentRole; content: string }) {
   const sourceLabel = message.source === "HUMAN" ? "Menselijke coach" : "AI-coach";
   return `[${sourceLabel} · rol: ${message.role}]\n${message.content}`;
+}
+
+function buildDocumentContextSection(contextText: string) {
+  const trimmed = contextText.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return [
+    "CLIENT_DOCUMENT_CONTEXT",
+    "Gebruik alleen deze context als ondersteunend bewijs; verzin geen ontbrekende details.",
+    "<<<CLIENT_DOCUMENT_CONTEXT>>>",
+    trimmed,
+    "<<<END_CLIENT_DOCUMENT_CONTEXT>>>",
+  ].join("\n");
+}
+
+function buildReportDocumentQuery(
+  client: ClientProfile,
+  history: Array<{ role: AgentRole; source: string; content: string }>,
+) {
+  const recentHumanMessages = history
+    .filter((message) => message.source === "HUMAN")
+    .slice(-8)
+    .map((message) => message.content.trim())
+    .filter((content) => content.length > 0);
+
+  const queryParts = [
+    client.name,
+    client.focusArea,
+    client.summary,
+    ...client.goals,
+    ...recentHumanMessages,
+  ].filter((part) => part && part.trim().length > 0);
+
+  return queryParts.join(" ");
 }
