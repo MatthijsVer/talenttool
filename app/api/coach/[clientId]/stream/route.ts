@@ -7,8 +7,8 @@ import {
   appendClientMessage,
   getAIModelSettings,
   getClient,
+  getClientDocumentContext,
   getCoachPrompt,
-  getDocumentSnippets,
   getOrCreateCoachingSession,
   getSessionWindow,
   type AgentRole,
@@ -18,6 +18,12 @@ import { getRequestId, logError, logInfo } from "@/lib/observability";
 import { DEFAULT_COACH_ROLE_PROMPT } from "@/lib/agents/prompts";
 
 export const runtime = "nodejs";
+const DEBUG_DOC_CONTEXT = process.env.DEBUG_DOC_CONTEXT === "1";
+const COACH_DOCUMENT_CONTEXT_BUDGET_CHARS = Number(
+  process.env.COACH_DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    process.env.DOCUMENT_CONTEXT_BUDGET_CHARS ??
+    "6000",
+);
 
 interface Params {
   params: Promise<{
@@ -66,16 +72,13 @@ function formatMessageForAgent(message: {
 function buildCoachSystemPrompt(
   basePrompt: string,
   client: ClientProfile,
-  documentSnippets: string[],
+  documentContextText: string,
 ) {
   const goals =
     client.goals.length > 0
       ? client.goals.join("; ")
       : "Nog geen doelen vastgelegd";
-  const docText =
-    documentSnippets.length > 0
-      ? `Extra context uit documenten:\n${documentSnippets.join("\n\n")}`
-      : "";
+  const docText = buildDocumentContextSection(documentContextText);
   return [
     basePrompt,
     `Cliënt: ${client.name}. Focus: ${client.focusArea}. Samenvatting: ${client.summary}. Doelen: ${goals}.`,
@@ -83,6 +86,21 @@ function buildCoachSystemPrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function buildDocumentContextSection(contextText: string) {
+  const trimmed = contextText.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return [
+    "CLIENT_DOCUMENT_CONTEXT",
+    "Gebruik alleen deze context als ondersteunend bewijs; verzin geen ontbrekende details.",
+    "<<<CLIENT_DOCUMENT_CONTEXT>>>",
+    trimmed,
+    "<<<END_CLIENT_DOCUMENT_CONTEXT>>>",
+  ].join("\n");
 }
 
 export async function POST(request: Request, { params }: Params) {
@@ -227,13 +245,20 @@ export async function POST(request: Request, { params }: Params) {
             "HUMAN",
           );
 
-          const [history, documentSnippets, storedPrompt, models, latestClient] =
+          const [history, storedPrompt, models, latestClient, documentContext] =
             await Promise.all([
               getSessionWindow(userId, clientId),
-              getDocumentSnippets(clientId),
               getCoachPrompt(),
               getAIModelSettings(),
               getClient(clientId),
+              getClientDocumentContext({
+                userId,
+                role: session.user.role,
+                clientId,
+                queryText: message,
+                budgetChars: COACH_DOCUMENT_CONTEXT_BUDGET_CHARS,
+                requestId,
+              }),
             ]);
 
           if (!latestClient) {
@@ -248,7 +273,7 @@ export async function POST(request: Request, { params }: Params) {
               content: buildCoachSystemPrompt(
                 coachPrompt,
                 latestClient,
-                documentSnippets,
+                documentContext.contextText,
               ),
             },
             ...((history ?? []).map((entry) => ({
@@ -294,6 +319,9 @@ export async function POST(request: Request, { params }: Params) {
             clientId,
             responseId: completion.responseId,
             usage: completion.usage,
+            ...(DEBUG_DOC_CONTEXT
+              ? { documentContextSources: documentContext.sources }
+              : {}),
           });
 
           const durationMs = Date.now() - startedAt;
@@ -306,6 +334,8 @@ export async function POST(request: Request, { params }: Params) {
             conversationId: conversationId ?? null,
             messageLength: message.length,
             replyLength: trimmedReply.length,
+            documentContextChunkCount: documentContext.sources.length,
+            documentContextChars: documentContext.contextText.length,
             responseId: completion.responseId,
             status: 200,
             durationMs,
