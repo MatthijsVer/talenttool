@@ -33,7 +33,7 @@ import {
 import type { UserRole } from "@prisma/client";
 import { toast } from "sonner";
 
-import { authClient } from "@/lib/auth-client";
+import { signOutUser } from "@/lib/auth-client";
 import { AdminUserManagement } from "@/components/admin/user-management";
 import { VoiceRecorder } from "@/components/chat/voice-recorder";
 import {
@@ -1852,7 +1852,7 @@ export function CoachDashboard({ clients, currentUser }: CoachDashboardProps) {
     setSigningOut(true);
     setError(null);
     try {
-      await authClient.signOut();
+      await signOutUser();
       router.push("/login");
       router.refresh();
     } catch (signOutError) {

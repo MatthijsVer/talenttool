@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { OpenAITimeoutError, runAgentCompletionStream } from "@/lib/ai/openai";
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { assertCanAccessClient, ForbiddenError } from "@/lib/authz";
 import {
   appendClientMessage,
@@ -38,6 +38,7 @@ function jsonWithRequestId(
 ) {
   const response = NextResponse.json(body, init);
   response.headers.set("x-request-id", requestId);
+  response.headers.set("Cache-Control", "no-store");
   return response;
 }
 
@@ -82,6 +83,7 @@ function buildCoachSystemPrompt(
   return [
     basePrompt,
     `Cliënt: ${client.name}. Focus: ${client.focusArea}. Samenvatting: ${client.summary}. Doelen: ${goals}.`,
+    "Gedragsregel: als documentcontext aanwezig is, gebruik die actief en zeg nooit dat je geen toegang hebt tot cliëntdocumenten. Als iets ontbreekt, zeg: 'Dit staat niet in de huidige documentcontext.'",
     docText,
   ]
     .filter(Boolean)
@@ -113,9 +115,9 @@ export async function POST(request: Request, { params }: Params) {
     method: "POST",
   });
 
-  const cookie = request.headers.get("cookie") ?? "";
-  const session = await auth.api.getSession({
-    headers: { cookie },
+  const session = await getServerSessionFromRequest(request, {
+    requestId,
+    source: "/api/coach/[clientId]/stream POST",
   });
 
   if (!session) {
@@ -281,6 +283,33 @@ export async function POST(request: Request, { params }: Params) {
               content: formatMessageForAgent(entry),
             })) as Array<{ role: ChatRole; content: string }>),
           ];
+          const documentIds = Array.from(
+            new Set(documentContext.sources.map((source) => source.documentId)),
+          );
+          const filenames = Array.from(
+            new Set(documentContext.sources.map((source) => source.filename)),
+          );
+          const streamSystemPrompt = completionMessages[0]?.content ?? "";
+          logInfo("api.coach.stream.context.attached", {
+            requestId,
+            route,
+            method: "POST",
+            userId,
+            clientId,
+            conversationId: conversationId ?? null,
+            messageLength: message.length,
+            historyCount: (history ?? []).length,
+            messagesCount: completionMessages.length,
+            systemPromptChars: streamSystemPrompt.length,
+            hasContextBoundary: streamSystemPrompt.includes(
+              "<<<CLIENT_DOCUMENT_CONTEXT>>>",
+            ),
+            documentContextChunkCount: documentContext.sources.length,
+            documentContextDocumentCount: documentIds.length,
+            documentContextChars: documentContext.contextText.length,
+            documentIds,
+            filenames: filenames.slice(0, 12),
+          });
 
           let assistantReply = "";
           const completion = await runAgentCompletionStream({

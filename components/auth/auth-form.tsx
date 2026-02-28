@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, Mail, UserRound } from "lucide-react";
 
-import { authClient } from "@/lib/auth-client";
+import { signInWithEmail, signUpWithEmail } from "@/lib/auth-client";
 
 interface AuthFormProps {
   invite?: {
@@ -78,7 +78,7 @@ export function AuthForm({ invite }: AuthFormProps = {}) {
           }
           setSuccess("Welkom! Je account is aangemaakt.");
         } else {
-          await authClient.signUp.email({
+          await signUpWithEmail({
             email,
             password,
             name,
@@ -86,7 +86,7 @@ export function AuthForm({ invite }: AuthFormProps = {}) {
           setSuccess("Account aangemaakt. Je wordt doorgestuurd...");
         }
       } else {
-        await authClient.signIn.email({
+        await signInWithEmail({
           email,
           password,
         });

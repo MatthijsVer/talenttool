@@ -653,13 +653,34 @@ export async function getClientDocuments(
   clientId: string,
   limit = 20,
 ): Promise<ClientDocument[]> {
-  const documents = await prisma.clientDocument.findMany({
-    where: { clientId },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
+  try {
+    const documents = await prisma.clientDocument.findMany({
+      where: { clientId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
 
-  return documents.map(mapDocument);
+    return documents.map(mapDocument);
+  } catch (error) {
+    if (!isMissingDocumentContextSchemaError(error)) {
+      throw error;
+    }
+
+    logInfo("documents.schema_fallback", {
+      op: "getClientDocuments",
+      clientId,
+      reason: "missing_extraction_columns_or_tables",
+    });
+
+    const documents = await prisma.clientDocument.findMany({
+      where: { clientId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: LEGACY_DOCUMENT_SELECT,
+    });
+
+    return documents.map(mapLegacyDocument);
+  }
 }
 
 function clampPositiveInt(value: number, fallback: number) {
@@ -744,6 +765,47 @@ function buildQueryTerms(input: string) {
   );
 }
 
+async function getDocumentAvailabilityStats(clientId: string): Promise<{
+  docsTotalCount: number;
+  docsReadyCount: number | null;
+  docsWithContentCount: number;
+}> {
+  const docsTotalCount = await prisma.clientDocument.count({
+    where: { clientId },
+  });
+  const docsWithContentCount = await prisma.clientDocument.count({
+    where: {
+      clientId,
+      content: {
+        not: null,
+      },
+    },
+  });
+
+  try {
+    const docsReadyCount = await prisma.clientDocument.count({
+      where: {
+        clientId,
+        extractionStatus: DocumentExtractionStatus.READY,
+      },
+    });
+    return {
+      docsTotalCount,
+      docsReadyCount,
+      docsWithContentCount,
+    };
+  } catch (error) {
+    if (!isMissingDocumentContextSchemaError(error)) {
+      throw error;
+    }
+    return {
+      docsTotalCount,
+      docsReadyCount: null,
+      docsWithContentCount,
+    };
+  }
+}
+
 function countOccurrences(text: string, term: string) {
   let count = 0;
   let fromIndex = 0;
@@ -813,8 +875,51 @@ export async function createClientDocument(input: {
       ? splitDocumentIntoChunks(normalizedContent)
       : [];
 
-  const document = await prisma.$transaction(async (tx) => {
-    const created = await tx.clientDocument.create({
+  try {
+    const document = await prisma.$transaction(async (tx) => {
+      const created = await tx.clientDocument.create({
+        data: {
+          clientId: input.clientId,
+          originalName: input.originalName,
+          storedName: input.storedName,
+          mimeType: input.mimeType,
+          size: input.size,
+          content: normalizedContent,
+          kind: input.kind ?? "TEXT",
+          audioDuration: input.audioDuration,
+          extractionStatus,
+          extractionError: input.extractionError ?? null,
+          extractedAt,
+        },
+      });
+
+      if (chunks.length > 0) {
+        await tx.documentChunk.createMany({
+          data: chunks.map((text, chunkIndex) => ({
+            documentId: created.id,
+            clientId: created.clientId,
+            chunkIndex,
+            text,
+          })),
+        });
+      }
+
+      return created;
+    });
+
+    return mapDocument(document);
+  } catch (error) {
+    if (!isMissingDocumentContextSchemaError(error)) {
+      throw error;
+    }
+
+    logInfo("documents.schema_fallback", {
+      op: "createClientDocument",
+      clientId: input.clientId,
+      reason: "missing_extraction_columns_or_tables",
+    });
+
+    const document = await prisma.clientDocument.create({
       data: {
         clientId: input.clientId,
         originalName: input.originalName,
@@ -823,28 +928,14 @@ export async function createClientDocument(input: {
         size: input.size,
         content: normalizedContent,
         kind: input.kind ?? "TEXT",
-        audioDuration: input.audioDuration,
-        extractionStatus,
-        extractionError: input.extractionError ?? null,
-        extractedAt,
+        audioDuration:
+          typeof input.audioDuration === "number" ? input.audioDuration : null,
       },
+      select: LEGACY_DOCUMENT_SELECT,
     });
 
-    if (chunks.length > 0) {
-      await tx.documentChunk.createMany({
-        data: chunks.map((text, chunkIndex) => ({
-          documentId: created.id,
-          clientId: created.clientId,
-          chunkIndex,
-          text,
-        })),
-      });
-    }
-
-    return created;
-  });
-
-  return mapDocument(document);
+    return mapLegacyDocument(document);
+  }
 }
 
 export async function updateClientDocumentExtraction(input: {
@@ -913,6 +1004,28 @@ export async function updateClientDocumentExtraction(input: {
 
     return mapDocumentWithClient(document);
   } catch (error) {
+    if (isMissingDocumentContextSchemaError(error)) {
+      logInfo("documents.schema_fallback", {
+        op: "updateClientDocumentExtraction",
+        clientId: input.clientId,
+        documentId: input.documentId,
+        reason: "missing_extraction_columns_or_tables",
+      });
+
+      const updated = await prisma.clientDocument.update({
+        where: { id: scopedDocument.id },
+        data: {
+          content: normalizedContent ?? null,
+          kind: input.kind,
+          audioDuration:
+            typeof input.audioDuration === "number" ? input.audioDuration : null,
+        },
+        select: LEGACY_DOCUMENT_WITH_CLIENT_SELECT,
+      });
+
+      return mapLegacyDocumentWithClient(updated);
+    }
+
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2025"
@@ -927,16 +1040,41 @@ export async function getClientDocumentById(
   documentId: string,
   clientId: string,
 ): Promise<ClientDocumentWithClient | null> {
-  const document = await prisma.clientDocument.findFirst({
-    where: {
-      id: documentId,
+  try {
+    const document = await prisma.clientDocument.findFirst({
+      where: {
+        id: documentId,
+        clientId,
+      },
+    });
+    if (!document) {
+      return null;
+    }
+    return mapDocumentWithClient(document);
+  } catch (error) {
+    if (!isMissingDocumentContextSchemaError(error)) {
+      throw error;
+    }
+
+    logInfo("documents.schema_fallback", {
+      op: "getClientDocumentById",
       clientId,
-    },
-  });
-  if (!document) {
-    return null;
+      documentId,
+      reason: "missing_extraction_columns_or_tables",
+    });
+
+    const document = await prisma.clientDocument.findFirst({
+      where: {
+        id: documentId,
+        clientId,
+      },
+      select: LEGACY_DOCUMENT_WITH_CLIENT_SELECT,
+    });
+    if (!document) {
+      return null;
+    }
+    return mapLegacyDocumentWithClient(document);
   }
-  return mapDocumentWithClient(document);
 }
 
 export async function deleteClientDocumentById(
@@ -954,10 +1092,29 @@ export async function deleteClientDocumentById(
     return null;
   }
 
-  const document = await prisma.clientDocument.delete({
-    where: { id: scopedDocument.id },
-  });
-  return mapDocumentWithClient(document);
+  try {
+    const document = await prisma.clientDocument.delete({
+      where: { id: scopedDocument.id },
+    });
+    return mapDocumentWithClient(document);
+  } catch (error) {
+    if (!isMissingDocumentContextSchemaError(error)) {
+      throw error;
+    }
+
+    logInfo("documents.schema_fallback", {
+      op: "deleteClientDocumentById",
+      clientId,
+      documentId,
+      reason: "missing_extraction_columns_or_tables",
+    });
+
+    const document = await prisma.clientDocument.delete({
+      where: { id: scopedDocument.id },
+      select: LEGACY_DOCUMENT_WITH_CLIENT_SELECT,
+    });
+    return mapLegacyDocumentWithClient(document);
+  }
 }
 
 export async function getClientDocumentContext(options: {
@@ -986,6 +1143,20 @@ export async function getClientDocumentContext(options: {
   if (budgetChars <= 0) {
     return { contextText: "", sources: [] };
   }
+  const availability = await getDocumentAvailabilityStats(options.clientId);
+  const queryTerms = buildQueryTerms(options.queryText);
+  logInfo("doc_context.query", {
+    requestId: options.requestId ?? null,
+    userId: options.userId,
+    clientId: options.clientId,
+    queryLength: options.queryText.length,
+    queryTermCount: queryTerms.length,
+    queryTerms: queryTerms.slice(0, 12),
+    budgetChars,
+    docsTotalCount: availability.docsTotalCount,
+    docsReadyCount: availability.docsReadyCount,
+    docsWithContentCount: availability.docsWithContentCount,
+  });
 
   type CandidateChunk = {
     text: string;
@@ -1102,6 +1273,9 @@ export async function getClientDocumentContext(options: {
       requestId: options.requestId ?? null,
       userId: options.userId,
       clientId: options.clientId,
+      docsTotalCount: availability.docsTotalCount,
+      docsReadyCount: availability.docsReadyCount,
+      docsWithContentCount: availability.docsWithContentCount,
       docsCount: 0,
       chunkCount: 0,
       selectedChunkCount: 0,
@@ -1111,7 +1285,6 @@ export async function getClientDocumentContext(options: {
     return { contextText: "", sources: [] };
   }
 
-  const queryTerms = buildQueryTerms(options.queryText);
   const ranked = chunks
     .map((chunk) => {
       const lower = chunk.text.toLowerCase();
@@ -1169,16 +1342,22 @@ export async function getClientDocumentContext(options: {
 
   const contextText = selectedChunks.join("\n\n---\n\n").trim();
   const documentIds = Array.from(new Set(selectedSources.map((source) => source.documentId)));
+  const filenames = Array.from(new Set(selectedSources.map((source) => source.filename)));
   logInfo("doc_context.selected", {
     requestId: options.requestId ?? null,
     userId: options.userId,
     clientId: options.clientId,
     queryLength: options.queryText.length,
+    queryTermCount: queryTerms.length,
+    docsTotalCount: availability.docsTotalCount,
+    docsReadyCount: availability.docsReadyCount,
+    docsWithContentCount: availability.docsWithContentCount,
     docsCount: Array.from(new Set(chunks.map((chunk) => chunk.document.id))).length,
     chunkCount: chunks.length,
     selectedChunkCount: selectedSources.length,
     totalChars: contextText.length,
     documentIds,
+    filenames: filenames.slice(0, 12),
   });
 
   return {
@@ -1796,6 +1975,74 @@ function mapDocument(document: {
     extractionStatus: document.extractionStatus,
     extractionError: document.extractionError,
     extractedAt: document.extractedAt ? document.extractedAt.toISOString() : null,
+  };
+}
+
+const LEGACY_DOCUMENT_SELECT = {
+  id: true,
+  originalName: true,
+  storedName: true,
+  mimeType: true,
+  size: true,
+  createdAt: true,
+  kind: true,
+  audioDuration: true,
+  content: true,
+} satisfies Prisma.ClientDocumentSelect;
+
+const LEGACY_DOCUMENT_WITH_CLIENT_SELECT = {
+  ...LEGACY_DOCUMENT_SELECT,
+  clientId: true,
+} satisfies Prisma.ClientDocumentSelect;
+
+function inferLegacyExtractionStatus(content: string | null) {
+  return content && content.trim().length > 0
+    ? DocumentExtractionStatus.READY
+    : DocumentExtractionStatus.PENDING;
+}
+
+function mapLegacyDocument(document: {
+  id: string;
+  originalName: string;
+  storedName: string;
+  mimeType: string;
+  size: number;
+  createdAt: Date;
+  kind: DocumentKind;
+  audioDuration: number | null;
+  content: string | null;
+}): ClientDocument {
+  return {
+    id: document.id,
+    originalName: document.originalName,
+    storedName: document.storedName,
+    mimeType: document.mimeType,
+    size: document.size,
+    kind: document.kind,
+    audioDuration: document.audioDuration,
+    createdAt: document.createdAt.toISOString(),
+    content: document.content,
+    extractionStatus: inferLegacyExtractionStatus(document.content),
+    extractionError: null,
+    extractedAt: document.content ? document.createdAt.toISOString() : null,
+  };
+}
+
+function mapLegacyDocumentWithClient(document: {
+  id: string;
+  clientId: string;
+  originalName: string;
+  storedName: string;
+  mimeType: string;
+  size: number;
+  createdAt: Date;
+  kind: DocumentKind;
+  audioDuration: number | null;
+  content: string | null;
+}): ClientDocumentWithClient {
+  return {
+    ...mapLegacyDocument(document),
+    clientId: document.clientId,
   };
 }
 

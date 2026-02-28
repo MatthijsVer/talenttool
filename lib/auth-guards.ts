@@ -1,6 +1,6 @@
 import { UserRole } from "@prisma/client";
 
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { getRequestId } from "@/lib/observability";
 
 export class SessionGuardError extends Error {
@@ -23,9 +23,9 @@ export async function requireAuthenticatedSession(
   role: UserRole;
 }> {
   const resolvedRequestId = requestId ?? getRequestId(request);
-  const cookie = request.headers.get("cookie") ?? "";
-  const session = await auth.api.getSession({
-    headers: { cookie },
+  const session = await getServerSessionFromRequest(request, {
+    requestId: resolvedRequestId,
+    source: "lib/auth-guards.requireAuthenticatedSession",
   });
 
   if (!session) {

@@ -1,20 +1,33 @@
 import { NextResponse } from "next/server";
 
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { updateUserProfile } from "@/lib/data/store";
+import { getRequestId } from "@/lib/observability";
+
+function jsonNoStore(body: unknown, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
 
 export async function PATCH(request: Request) {
-  const session = await auth.api.getSession({
-    headers: request.headers,
+  const requestId = getRequestId(request);
+  const session = await getServerSessionFromRequest(request, {
+    requestId,
+    source: "/api/users/me",
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    const response = jsonNoStore({ error: "Niet geautoriseerd" }, { status: 401 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const payload = await request.json().catch(() => null);
   if (!payload) {
-    return NextResponse.json({ error: "Ongeldig verzoek" }, { status: 400 });
+    const response = jsonNoStore({ error: "Ongeldig verzoek" }, { status: 400 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const { name, image, avatarAlt } = payload as {
@@ -29,5 +42,7 @@ export async function PATCH(request: Request) {
     avatarAlt,
   });
 
-  return NextResponse.json({ user: updated });
+  const response = jsonNoStore({ user: updated });
+  response.headers.set("x-request-id", requestId);
+  return response;
 }

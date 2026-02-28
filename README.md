@@ -139,3 +139,56 @@ GROUP BY "clientId", "documentId"
 ORDER BY chunk_count DESC
 LIMIT 20;
 ```
+
+## Auth debugging
+
+Enable debug mode locally:
+
+```bash
+AUTH_DEBUG=1
+NEXT_PUBLIC_AUTH_DEBUG=1
+```
+
+Restart the app after changing env vars.
+
+### Debug endpoint
+
+- Development only: `GET /api/auth/debug`
+- Production (`next start`) intentionally returns `404`.
+
+Response shape:
+
+- `hasSession`
+- `userId`
+- `cookieNames` (names only, never values)
+- `timestamp`
+- `authDebugEnabled`
+
+### Logs to check
+
+1. Auth route lifecycle (server):
+   - `auth.route.start`
+   - `auth.route.end`
+   - `auth.route.error`
+2. Session reads (server):
+   - `auth.session.read`
+   - `auth.session.read.error`
+3. Client auth actions (browser console):
+   - `auth.client.signin.start` / `auth.client.signin.end`
+   - `auth.client.signout.start` / `auth.client.signout.end`
+
+Each event includes `requestId` so you can correlate client and server actions.
+
+### Common symptoms and checks
+
+1. Sign-out appears to succeed but user still seems logged in:
+   - Check `auth.client.signout.end` and `auth.route.end` for same `requestId`.
+   - Confirm `auth.route.end` shows `hasSetCookie: true` and cookie names include auth cookies.
+   - Confirm subsequent protected API call returns `401`.
+2. Sign-in requires refresh:
+   - Check `auth.client.signin.end` has success status.
+   - Check `auth.session.read` right after sign-in returns `hasSession: true`.
+   - Ensure app and auth endpoints are served from the same origin in local dev.
+3. UI session looks stale:
+   - Confirm client calls trigger `router.refresh()`.
+   - Confirm API responses are `Cache-Control: no-store`.

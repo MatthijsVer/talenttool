@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { runCoachAgent } from "@/lib/agents/service";
 import { OpenAITimeoutError } from "@/lib/ai/openai";
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { assertCanAccessClient, ForbiddenError } from "@/lib/authz";
 import { getSessionWindow } from "@/lib/data/store";
 import {
@@ -27,6 +27,7 @@ function jsonWithRequestId(
 ) {
   const response = NextResponse.json(body, init);
   response.headers.set("x-request-id", requestId);
+  response.headers.set("Cache-Control", "no-store");
   return response;
 }
 
@@ -41,9 +42,9 @@ export async function GET(request: Request, { params }: Params) {
   });
 
   try {
-    const cookie = request.headers.get("cookie") ?? "";
-    const session = await auth.api.getSession({
-      headers: { cookie },
+    const session = await getServerSessionFromRequest(request, {
+      requestId,
+      source: "/api/coach/[clientId] GET",
     });
 
     if (!session) {
@@ -149,9 +150,9 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   try {
-    const cookie = request.headers.get("cookie") ?? "";
-    const session = await auth.api.getSession({
-      headers: { cookie },
+    const session = await getServerSessionFromRequest(request, {
+      requestId,
+      source: "/api/coach/[clientId] POST",
     });
 
     if (!session) {
@@ -235,6 +236,9 @@ export async function POST(request: Request, { params }: Params) {
     );
 
     const updatedHistory = (await getSessionWindow(session.user.id, clientId)) ?? [];
+    const documentIds = Array.from(
+      new Set((result.documentContextSources ?? []).map((source) => source.documentId)),
+    );
     const durationMs = Date.now() - startedAt;
     logInfo("api.coach.post.end", {
       requestId,
@@ -245,6 +249,9 @@ export async function POST(request: Request, { params }: Params) {
       conversationId: conversationId ?? null,
       messageLength: message.length,
       replyLength: result.reply.length,
+      documentContextChunkCount: result.documentContextSources?.length ?? 0,
+      documentContextDocumentCount: documentIds.length,
+      documentIds,
       status: 200,
       durationMs,
       historyCount: updatedHistory.length,

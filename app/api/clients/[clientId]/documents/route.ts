@@ -23,11 +23,14 @@ function jsonWithRequestId(
 ) {
   const response = NextResponse.json(body, init);
   response.headers.set("x-request-id", requestId);
+  response.headers.set("Cache-Control", "no-store");
   return response;
 }
 
 export async function GET(request: Request, { params }: Params) {
   const requestId = getRequestId(request);
+  const route = "/api/clients/[clientId]/documents";
+  const startedAt = Date.now();
   const cookie = request.headers.get("cookie") ?? "";
   const session = await auth.api.getSession({
     headers: { cookie },
@@ -56,6 +59,28 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const documents = await getClientDocuments(clientId);
+  const extractionStatusCounts = documents.reduce<Record<string, number>>(
+    (acc, document) => {
+      const key = document.extractionStatus ?? "UNKNOWN";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const docsWithNonEmptyContentCount = documents.filter(
+    (document) => Boolean(document.content?.trim()),
+  ).length;
+  logInfo("documents.list.end", {
+    requestId,
+    route,
+    userId: session.user.id,
+    clientId,
+    status: 200,
+    durationMs: Date.now() - startedAt,
+    documentsCount: documents.length,
+    docsWithNonEmptyContentCount,
+    extractionStatusCounts,
+  });
   return jsonWithRequestId(requestId, { documents });
 }
 

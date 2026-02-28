@@ -2,45 +2,64 @@ import { NextResponse } from "next/server";
 
 import type { UserRole } from "@prisma/client";
 
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { isAdmin } from "@/lib/authz";
 import { createClient, getClients } from "@/lib/data/store";
 import { isCoachUser } from "@/lib/data/users";
+import { getRequestId } from "@/lib/observability";
+
+function jsonNoStore(body: unknown, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
 
 export async function GET(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  const session = await auth.api.getSession({
-    headers: { cookie },
+  const requestId = getRequestId(request);
+  const session = await getServerSessionFromRequest(request, {
+    requestId,
+    source: "/api/clients GET",
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    const response = jsonNoStore({ error: "Niet geautoriseerd" }, { status: 401 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const clients = await getClients({
     userId: session.user.id,
     role: session.user.role as UserRole,
   });
-  return NextResponse.json({ clients });
+  const response = jsonNoStore({ clients });
+  response.headers.set("x-request-id", requestId);
+  return response;
 }
 
 export async function POST(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  const session = await auth.api.getSession({
-    headers: { cookie },
+  const requestId = getRequestId(request);
+  const session = await getServerSessionFromRequest(request, {
+    requestId,
+    source: "/api/clients POST",
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    const response = jsonNoStore({ error: "Niet geautoriseerd" }, { status: 401 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   if (!isAdmin({ id: session.user.id, role: session.user.role })) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 403 });
+    const response = jsonNoStore({ error: "Niet geautoriseerd" }, { status: 403 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const payload = await request.json().catch(() => null);
   if (!payload || typeof payload !== "object") {
-    return NextResponse.json({ error: "Ongeldig verzoek" }, { status: 400 });
+    const response = jsonNoStore({ error: "Ongeldig verzoek" }, { status: 400 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const { name, focusArea, summary, goals, avatarUrl, coachId } = payload as {
@@ -53,17 +72,21 @@ export async function POST(request: Request) {
   };
 
   if (!name || typeof name !== "string" || !name.trim()) {
-    return NextResponse.json({ error: "Naam is verplicht" }, { status: 400 });
+    const response = jsonNoStore({ error: "Naam is verplicht" }, { status: 400 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   let normalizedCoachId: string | null = null;
   if (typeof coachId === "string" && coachId.trim().length > 0) {
     const coachExists = await isCoachUser(coachId);
     if (!coachExists) {
-      return NextResponse.json(
+      const response = jsonNoStore(
         { error: "Geselecteerde coach bestaat niet." },
         { status: 400 }
       );
+      response.headers.set("x-request-id", requestId);
+      return response;
     }
     normalizedCoachId = coachId;
   }
@@ -81,5 +104,7 @@ export async function POST(request: Request) {
     coachId: normalizedCoachId,
   });
 
-  return NextResponse.json({ client }, { status: 201 });
+  const response = jsonNoStore({ client }, { status: 201 });
+  response.headers.set("x-request-id", requestId);
+  return response;
 }

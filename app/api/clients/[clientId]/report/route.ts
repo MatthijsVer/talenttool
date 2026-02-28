@@ -221,6 +221,9 @@ export async function POST(request: Request, { params }: RouteParams) {
       userId: session.user.id,
       role: session.user.role,
     });
+    const documentIds = Array.from(
+      new Set((result.documentContextSources ?? []).map((source) => source.documentId)),
+    );
     const durationMs = Date.now() - startedAt;
     logInfo("api.client-report.post.end", {
       requestId,
@@ -233,6 +236,9 @@ export async function POST(request: Request, { params }: RouteParams) {
       responseId: result.responseId,
       reportId: result.reportId ?? null,
       replyLength: result.reply.length,
+      documentContextChunkCount: result.documentContextSources?.length ?? 0,
+      documentContextDocumentCount: documentIds.length,
+      documentIds,
       totalTokens: result.usage?.totalTokens,
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,

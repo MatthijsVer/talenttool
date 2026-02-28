@@ -73,6 +73,22 @@ interface ScopedAgentRunContext extends AgentRunContext {
   role: UserRole | string;
 }
 
+function summarizeDocumentContext(
+  contextText: string,
+  sources: DocumentContextSource[] | undefined,
+) {
+  const safeSources = sources ?? [];
+  const documentIds = Array.from(new Set(safeSources.map((source) => source.documentId)));
+  const filenames = Array.from(new Set(safeSources.map((source) => source.filename)));
+  return {
+    contextChars: contextText.length,
+    contextChunkCount: safeSources.length,
+    contextDocumentCount: documentIds.length,
+    documentIds,
+    filenames,
+  };
+}
+
 export async function runCoachAgent(
   options: {
     clientId: string;
@@ -132,6 +148,22 @@ export async function runCoachAgent(
           content: formatMessageForAgent(message),
         })),
       ];
+      const systemPrompt = messages[0]?.content ?? "";
+      const contextStats = summarizeDocumentContext(
+        documentContext.contextText,
+        documentContext.sources,
+      );
+      logInfo("agent.coach.context.attached", {
+        requestId: requestId ?? null,
+        userId,
+        clientId,
+        userMessageLength: userMessage.length,
+        historyCount: history.length,
+        messagesCount: messages.length,
+        systemPromptChars: systemPrompt.length,
+        hasContextBoundary: systemPrompt.includes("<<<CLIENT_DOCUMENT_CONTEXT>>>"),
+        ...contextStats,
+      });
 
       const completion = await runAgentCompletion({
         model: coachModel,
@@ -361,6 +393,20 @@ export async function generateClientReport(
       ]
         .filter(Boolean)
         .join("\n\n");
+      const reportContextStats = summarizeDocumentContext(
+        documentContext.contextText,
+        documentContext.sources,
+      );
+      logInfo("agent.report.context.attached", {
+        requestId: requestId ?? null,
+        userId,
+        clientId,
+        reportQueryLength: reportQueryText.length,
+        historyCount: history.length,
+        systemPromptChars: systemPrompt.length,
+        hasContextBoundary: systemPrompt.includes("<<<CLIENT_DOCUMENT_CONTEXT>>>"),
+        ...reportContextStats,
+      });
 
       const conversation = history
         .map((message) => formatMessageForAgent(message))
@@ -461,6 +507,7 @@ function buildCoachSystemPrompt(
   return [
     basePrompt,
     `Cliënt: ${client.name}. Focus: ${client.focusArea}. Samenvatting: ${client.summary}. Doelen: ${goals}.`,
+    "Gedragsregel: als documentcontext aanwezig is, gebruik die actief en zeg nooit dat je geen toegang hebt tot cliëntdocumenten. Als iets ontbreekt, zeg: 'Dit staat niet in de huidige documentcontext.'",
     docText,
   ]
     .filter(Boolean)

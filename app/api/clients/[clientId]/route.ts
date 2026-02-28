@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { auth } from "@/lib/auth";
+import { getServerSessionFromRequest } from "@/lib/auth";
 import { assertCanAccessClient, ForbiddenError, isAdmin } from "@/lib/authz";
 import { updateClientAvatar, updateClientProfile } from "@/lib/data/store";
 import { isCoachUser } from "@/lib/data/users";
+import { getRequestId } from "@/lib/observability";
 
 type RouteContext = {
   params: Promise<{
@@ -11,14 +12,23 @@ type RouteContext = {
   }>;
 };
 
+function jsonNoStore(body: unknown, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const cookie = request.headers.get("cookie") ?? "";
-  const session = await auth.api.getSession({
-    headers: { cookie },
+  const requestId = getRequestId(request);
+  const session = await getServerSessionFromRequest(request, {
+    requestId,
+    source: "/api/clients/[clientId] PATCH",
   });
 
   if (!session) {
-    return NextResponse.json({ error: "Niet geautoriseerd" }, { status: 401 });
+    const response = jsonNoStore({ error: "Niet geautoriseerd" }, { status: 401 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const user = { id: session.user.id, role: session.user.role };
@@ -33,10 +43,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       : null);
 
   if (!clientId) {
-    return NextResponse.json(
+    const response = jsonNoStore(
       { error: "Client ID ontbreekt" },
       { status: 400 }
     );
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   if (!admin) {
@@ -47,14 +59,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       });
     } catch (error) {
       if (error instanceof ForbiddenError) {
-        return NextResponse.json({ error: error.message }, { status: 403 });
+        const response = jsonNoStore({ error: error.message }, { status: 403 });
+        response.headers.set("x-request-id", requestId);
+        return response;
       }
       throw error;
     }
   }
 
   if (!payload || typeof payload !== "object") {
-    return NextResponse.json({ error: "Ongeldig verzoek" }, { status: 400 });
+    const response = jsonNoStore({ error: "Ongeldig verzoek" }, { status: 400 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const { name, focusArea, summary, goals, avatarUrl, coachId } = payload as {
@@ -68,7 +84,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   if (avatarUrl) {
     const client = await updateClientAvatar(clientId, avatarUrl);
-    return NextResponse.json({ client });
+    const response = jsonNoStore({ client });
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const hasCoachUpdate = Object.prototype.hasOwnProperty.call(
@@ -77,10 +95,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   );
 
   if (!admin && hasCoachUpdate) {
-    return NextResponse.json(
+    const response = jsonNoStore(
       { error: "Alleen admins mogen de coachtoewijzing wijzigen." },
       { status: 403 },
     );
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   let nextCoachId: string | null | undefined = undefined;
@@ -90,25 +110,31 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     } else if (typeof coachId === "string") {
       const coachExists = await isCoachUser(coachId);
       if (!coachExists) {
-        return NextResponse.json(
+        const response = jsonNoStore(
           { error: "Geselecteerde coach bestaat niet." },
           { status: 400 }
         );
+        response.headers.set("x-request-id", requestId);
+        return response;
       }
       nextCoachId = coachId;
     } else {
-      return NextResponse.json(
+      const response = jsonNoStore(
         { error: "Ongeldige coachreferentie" },
         { status: 400 }
       );
+      response.headers.set("x-request-id", requestId);
+      return response;
     }
   }
 
   if (!name && !focusArea && !summary && !goals && !hasCoachUpdate) {
-    return NextResponse.json(
+    const response = jsonNoStore(
       { error: "Geen wijzigingen doorgegeven" },
       { status: 400 }
     );
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
 
   const updatePayload: {
@@ -130,5 +156,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const updatedClient = await updateClientProfile(clientId, updatePayload);
 
-  return NextResponse.json({ client: updatedClient });
+  const response = jsonNoStore({ client: updatedClient });
+  response.headers.set("x-request-id", requestId);
+  return response;
 }

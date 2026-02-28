@@ -2,18 +2,20 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { CoachDashboard } from "@/components/coach-dashboard";
-import { auth } from "@/lib/auth";
+import { getServerSessionFromCookieHeader } from "@/lib/auth";
 import { getClients } from "@/lib/data/store";
 import { syncUserRole } from "@/lib/user-role";
 import type { UserRole } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function Home() {
   const headerStore = await headers();
-  const session = await auth.api.getSession({
-    headers: {
-      cookie: headerStore.get("cookie") ?? "",
-    },
-  });
+  const session = await getServerSessionFromCookieHeader(
+    headerStore.get("cookie") ?? "",
+    { source: "app/page.tsx" },
+  );
 
   if (!session) {
     redirect("/login");
